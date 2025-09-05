@@ -1,6 +1,6 @@
 module github.com/vs-uulm/go-taf
 
-go 1.24.1
+go 1.24.6
 
 require (
 	github.com/IBM/sarama v1.43.2

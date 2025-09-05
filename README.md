@@ -1,37 +1,15 @@
 # Trust Assessment Framework
 
-[![Latest Release](https://connect.informatik.uni-ulm.de/coordination/go-taf/-/badges/release.svg)](https://connect.informatik.uni-ulm.de/coordination/go-taf/-/releases)
-[![pipeline status](https://connect.informatik.uni-ulm.de/coordination/go-taf/badges/main/pipeline.svg)](https://connect.informatik.uni-ulm.de/coordination/go-taf/-/commits/main)
-
-
 
 This repository provides the latest prototype of the standalone Trust Assessment Framework.
 
 ## Gettting Started
 
-### Gettting a Pre-Compiled Binary
-
-You can get a pre-compiled version of the standalone TAF in the [Releases](https://connect.informatik.uni-ulm.de/coordination/go-taf/-/releases) section.
-
-
 ### Build from Source
 
-First, clone this repository:
+Clone this repository:
 ```shell
-git clone git@connect.informatik.uni-ulm.de:coordination/go-taf.git
-```
-
-Also clone the following internal dependencies into a shared common folder:
-```shell
-git clone git@connect.informatik.uni-ulm.de:coordination/tlee-implementation.git
-git clone git@connect.informatik.uni-ulm.de:coordination/crypto-library-interface.git
-```
-
-The resulting folder structure should look like this:
-```
-├── crypto-library-interface
-├── go-taf
-└── tlee-implementation
+git clone git@github.com:vs-uulm/go-taf.git
 ```
 
 Next, go to the `go-taf` directory and run make:
@@ -74,13 +52,6 @@ The TAF uses an internal configuration with hardcoded defaults. To change the co
                                         //    4=WARN, 5=ERROR, 6=FATAL, 7=PRINT
     "LogStyle": "PRETTY"                // log style: 'PRETTY', 'JSON', or 'PLAIN'
   },
-  "Crypto": {
-    "Enabled": true,                    // whether the crypto library should be used or not
-    "KeyFolder": "res/cert/",           // path to key folder that is passed to crypto library
-    "IgnoreVerificationResults": false  // false: discard messages that failed to verify
-                                        // true: process messages that failed to verify
-                                        //        (a warning will be logged to console)
-  },
   "Debug": {
     "FixedSessionID": "",               // if provided, this fixed value is used by the TAM
                                         // instead of a random UUID-based session id
@@ -88,18 +59,6 @@ The TAF uses an internal configuration with hardcoded defaults. To change the co
                                         // instead of a random UUID-based subscription id
     "FixedRequestID": ""                // if provided, this fixed request id is used by the
                                         // trust source manager instead of a random UUID-based id
-  },
-  "Evidence": {
-    "AIV": {
-      "CheckInterval": 1000             // check interval (in msec) passed to AIV in AivSubscribeRequest
-    }
-  },
-  "TLEE": {
-    "UseInternalTLEE": false            // false: use HUAWEI TLEE implementation
-                                        // true: use internal mockup TLEE instead
-    "DebuggingMode": false,             // false: disable TLEE debugging features
-                                        // true: enable TLEE debugging features
-    "FilePath": "debug/"                // path to be used for TLEE debugging file output 
   },
   "V2X" : {
     "NodeTTLsec" : 5,                   // The time to live of a node (vehicle) in seconds based on CPMs.
@@ -135,10 +94,4 @@ make clean-structs
 ```
 
 Again, please note that adding new schemas/structs will require manual code changes in addition to the auto-generation of the structs.
-
-
-## See Also
-
- * [Tools for Standalone TAF](https://connect.informatik.uni-ulm.de/coordination/go-taf-tools): `playback` and `watch` tools for TAF development and testing
- * [Trust Assessment Framework Documentation](https://connect.p.lxd-vs.uni-ulm.de/standalone-taf-documentation): User Documentation (WIP; currently UUlm-internal)
 
