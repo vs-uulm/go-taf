@@ -10,7 +10,6 @@ import (
 	"github.com/vs-uulm/go-taf/pkg/communication"
 	"github.com/vs-uulm/go-taf/pkg/config"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/go-taf/pkg/crypto"
 	"github.com/vs-uulm/go-taf/pkg/listener"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 	messages "github.com/vs-uulm/go-taf/pkg/message"
@@ -39,7 +38,6 @@ type Manager struct {
 	outbox   chan core.Message
 	tsm      manager.TrustSourceManager
 	tmm      manager.TrustModelManager
-	crypto   *crypto.Crypto
 	//tmiID->latest ATLs/PPs/TDs
 	atlResults map[string]core.AtlResultSet
 	//tas sub ID->sessionID
@@ -61,7 +59,6 @@ func NewManager(tafContext core.TafContext, channels core.TafChannels) (*Manager
 		sessions:                    make(map[string]session.Session),
 		workersToTam:                make(chan core.Command, tafContext.Configuration.ChanBufSize),
 		logger:                      logging.CreateChildLogger(tafContext.Logger, "TAM"),
-		crypto:                      tafContext.Crypto,
 		outbox:                      channels.OutgoingMessageChannel,
 		atlResults:                  make(map[string]core.AtlResultSet),
 		tasSubscriptionsToSessionID: make(map[string]string),
@@ -189,7 +186,7 @@ func (tam *Manager) HandleTasInitRequest(cmd command.HandleRequest[tasmsg.TasIni
 
 	sendErrorResponse := func(errorMsg string) {
 		response := tasmsg.TasInitResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errorMsg,
 			SessionID:              nil,
 			Success:                nil,
@@ -284,7 +281,7 @@ func (tam *Manager) HandleTasInitRequest(cmd command.HandleRequest[tasmsg.TasIni
 		success := "Session with trust model template '" + tmt.Identifier() + "' created."
 
 		response := tasmsg.TasInitResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  nil,
 			SessionID:              &sessionId,
 			Success:                &success,
@@ -332,7 +329,7 @@ func (tam *Manager) HandleTasTeardownRequest(cmd command.HandleRequest[tasmsg.Ta
 		errorMsg := "Session ID '" + cmd.Request.SessionID + "' not found."
 
 		response := tasmsg.TasTeardownResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errorMsg,
 			Success:                nil,
 		}
@@ -359,7 +356,7 @@ func (tam *Manager) HandleTasTeardownRequest(cmd command.HandleRequest[tasmsg.Ta
 
 	success := "Session with ID '" + cmd.Request.SessionID + "' successfully terminated."
 	response := tasmsg.TasTeardownResponse{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		Error:                  nil,
 		Success:                &success,
 	}
@@ -397,7 +394,7 @@ func (tam *Manager) HandleTasTaRequest(cmd command.HandleRequest[tasmsg.TasTaReq
 
 	sendErrorResponse := func(errMsg string) {
 		response := tasmsg.TasTaResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errMsg,
 			SessionID:              sessionID,
 		}
@@ -471,7 +468,7 @@ func (tam *Manager) HandleTasTaRequest(cmd command.HandleRequest[tasmsg.TasTaReq
 		}
 
 		response := tasmsg.TasTaResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  nil,
 			Results:                taResponseResults,
 			SessionID:              sessionID,
@@ -512,7 +509,7 @@ func (tam *Manager) HandleTasSubscribeRequest(cmd command.HandleSubscriptionRequ
 
 	sendErrorResponse := func(errMsg string) {
 		response := tasmsg.TasSubscribeResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errMsg,
 			SessionID:              sessionID,
 			SubscriptionID:         nil,
@@ -582,7 +579,7 @@ func (tam *Manager) HandleTasSubscribeRequest(cmd command.HandleSubscriptionRequ
 	//send TAS_SUBSCRIBE_RESPONSE
 	success := "Subscription successfully created."
 	response := tasmsg.TasSubscribeResponse{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		Error:                  nil,
 		SessionID:              sessionID,
 		SubscriptionID:         &subscriptionID,
@@ -629,7 +626,7 @@ func (tam *Manager) HandleTasSubscribeRequest(cmd command.HandleSubscriptionRequ
 	}
 
 	initialNotify := tasmsg.TasNotify{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		SessionID:              sessionID,
 		SubscriptionID:         subscriptionID,
 		Updates:                taResponseResults,
@@ -650,7 +647,7 @@ func (tam *Manager) HandleTasUnsubscribeRequest(cmd command.HandleSubscriptionRe
 
 	sendErrorResponse := func(errMsg string) {
 		response := tasmsg.TasUnsubscribeResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errMsg,
 			SessionID:              sessionID,
 			Success:                nil,
@@ -690,7 +687,7 @@ func (tam *Manager) HandleTasUnsubscribeRequest(cmd command.HandleSubscriptionRe
 	//send TAS_UNSUBSCRIBE_RESPONSE
 	success := "Subscription with ID '" + subscriptionID + "' successfully terminated."
 	response := tasmsg.TasUnsubscribeResponse{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		Error:                  nil,
 		SessionID:              sessionID,
 		Success:                &success,
@@ -799,7 +796,7 @@ func (tam *Manager) HandleATLUpdate(cmd command.HandleATLUpdate) {
 			}
 
 			notify := tasmsg.TasNotify{
-				AttestationCertificate: tam.crypto.AttestationCertificate(),
+				AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 				SessionID:              sessionID,
 				SubscriptionID:         subscriptionID,
 				Updates:                taResponseResults,

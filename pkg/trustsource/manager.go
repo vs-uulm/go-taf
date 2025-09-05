@@ -5,12 +5,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/vs-uulm/go-taf/internal/flow/completionhandler"
 	logging "github.com/vs-uulm/go-taf/internal/logger"
-	"github.com/vs-uulm/go-taf/internal/util"
 	"github.com/vs-uulm/go-taf/pkg/command"
 	"github.com/vs-uulm/go-taf/pkg/communication"
 	"github.com/vs-uulm/go-taf/pkg/config"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/go-taf/pkg/crypto"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 	messages "github.com/vs-uulm/go-taf/pkg/message"
 	aivmsg "github.com/vs-uulm/go-taf/pkg/message/aiv"
@@ -32,7 +30,6 @@ type Manager struct {
 	logger     *slog.Logger
 	tam        manager.TrustAssessmentManager
 	tmm        manager.TrustModelManager
-	crypto     *crypto.Crypto
 	outbox     chan core.Message
 	//Schema:ResponseID->Callback
 	pendingMessageCallbacks map[messages.MessageSchema]map[string]func(cmd core.Command)
@@ -48,7 +45,6 @@ func NewManager(tafContext core.TafContext, channels core.TafChannels) (*Manager
 		config:     tafContext.Configuration,
 		tafContext: tafContext,
 		logger:     logging.CreateChildLogger(tafContext.Logger, "TSM"),
-		crypto:     tafContext.Crypto,
 		outbox:     channels.OutgoingMessageChannel,
 	}
 	tsm.logger.Info("Initializing Trust Source Manager")
@@ -96,19 +92,6 @@ func (tsm *Manager) SetManagers(managers manager.TafManagers) {
 /* ------------ ------------ AIV Message Handling ------------ ------------ */
 
 func (tsm *Manager) HandleAivResponse(cmd command.HandleResponse[aivmsg.AivResponse]) {
-	valid, err := tsm.crypto.VerifyAivResponse(&cmd.Response)
-	if err != nil {
-		tsm.logger.Error("Error verifying AIV_RESPONSE", "Cause", err)
-		return
-	}
-	if !valid {
-		if tsm.config.Crypto.IgnoreVerificationResults {
-			tsm.logger.Warn("\n********************** WARNING ********************\n*   Ignoring failed AIV_RESPONSE verification     *\n********************** WARNING ********************")
-		} else {
-			tsm.logger.Warn("AIV_RESPONSE could not be verified, discarding message")
-			return
-		}
-	}
 	callback, exists := tsm.pendingMessageCallbacks[messages.AIV_RESPONSE][cmd.ResponseID]
 	if !exists {
 		tsm.logger.Warn("AIV_RESPONSE with unknown response ID received.")
@@ -139,19 +122,6 @@ func (tsm *Manager) HandleAivUnsubscribeResponse(cmd command.HandleResponse[aivm
 }
 
 func (tsm *Manager) HandleAivNotify(cmd command.HandleNotify[aivmsg.AivNotify]) {
-	valid, err := tsm.crypto.VerifyAivNotify(&cmd.Notify)
-	if err != nil {
-		tsm.logger.Error("Error verifying AIV_NOTIFY", "Cause", err)
-		return
-	}
-	if !valid {
-		if tsm.config.Crypto.IgnoreVerificationResults {
-			tsm.logger.Warn("\n********************** WARNING **********************\n*   Ignoring failed AIV_NOTIFY verification     *\n************************ WARNING ********************")
-		} else {
-			tsm.logger.Warn("AIV_NOTIFY could not be verified, discarding message")
-			return
-		}
-	}
 	if tsm.aivHandler != nil {
 		tsm.aivHandler.HandleNotify(cmd)
 	}
@@ -188,19 +158,6 @@ func (tsm *Manager) HandleMbdNotify(cmd command.HandleNotify[mbdmsg.MBDNotify]) 
 /* ------------ ------------ TCH Message Handling ------------ ------------ */
 
 func (tsm *Manager) HandleTchNotify(cmd command.HandleNotify[tchmsg.TchNotify]) {
-	valid, err := tsm.crypto.VerifyTchNotify(&cmd.Notify)
-	if err != nil {
-		tsm.logger.Error("Error verifying TCH_NOTIFY", "Cause", err)
-		return
-	}
-	if !valid {
-		if tsm.config.Crypto.IgnoreVerificationResults {
-			tsm.logger.Warn("\n********************** WARNING **********************\n*   Ignoring failed TCH_NOTIFY verification     *\n************************ WARNING ********************")
-		} else {
-			tsm.logger.Warn("TCH_NOTIFY could not be verified, discarding message")
-			return
-		}
-	}
 	if tsm.tchHandler != nil {
 		tsm.tchHandler.HandleNotify(cmd)
 	}
@@ -321,12 +278,10 @@ func (tsm *Manager) DispatchAivRequest(session session.Session, originalCmd comm
 			})
 		}
 		reqMsg := aivmsg.AivRequest{
-			AttestationCertificate: tsm.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tsm.crypto.AttestationCertificate(),*/
 			Evidence:               aivmsg.AIVREQUESTEvidence{},
 			Query:                  queryField,
 		}
-		err := tsm.crypto.SignAivRequest(&reqMsg)
-		util.UNUSED(err)
 
 		reqId := tsm.GenerateRequestId()
 		bytes, err := communication.BuildRequest(tsm.config.Communication.TafEndpoint, messages.AIV_REQUEST, tsm.config.Communication.TafEndpoint, reqId, reqMsg)
@@ -401,13 +356,11 @@ func (tsm *Manager) SubscribeAIV(handler *completionhandler.CompletionHandler, s
 	}
 
 	subMsg := aivmsg.AivSubscribeRequest{
-		AttestationCertificate: tsm.crypto.AttestationCertificate(),
-		CheckInterval:          int64(tsm.config.Evidence.AIV.CheckInterval),
+		AttestationCertificate: "",   /*tsm.crypto.AttestationCertificate(),*/
+		CheckInterval:          1000, /*int64(tsm.config.Evidence.AIV.CheckInterval),*/
 		Evidence:               aivmsg.AIVSUBSCRIBEREQUESTEvidence{},
 		Subscribe:              subscribeField,
 	}
-	err := tsm.crypto.SignAivSubscribeRequest(&subMsg)
-	util.UNUSED(err)
 	subReqId := tsm.GenerateRequestId()
 	bytes, err := communication.BuildSubscriptionRequest(tsm.config.Communication.TafEndpoint, messages.AIV_SUBSCRIBE_REQUEST, tsm.config.Communication.TafEndpoint, tsm.config.Communication.TafEndpoint, subReqId, subMsg)
 	if err != nil {
@@ -436,7 +389,7 @@ func (tsm *Manager) SubscribeAIV(handler *completionhandler.CompletionHandler, s
 
 func (tsm *Manager) SubscribeMBD(handler *completionhandler.CompletionHandler) {
 	subMsg := mbdmsg.MBDSubscribeRequest{
-		AttestationCertificate: tsm.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tsm.crypto.AttestationCertificate(),*/
 		Subscribe:              true,
 	}
 	subReqId := tsm.GenerateRequestId()
@@ -473,7 +426,7 @@ func (tsm *Manager) UnsubscribeAIV(subID string, handler *completionhandler.Comp
 	resolve, reject := handler.Register()
 
 	unsubMsg := aivmsg.AivUnsubscribeRequest{
-		AttestationCertificate: tsm.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tsm.crypto.AttestationCertificate(),*/
 		SubscriptionID:         subID,
 	}
 	unsubReqId := tsm.GenerateRequestId()
@@ -501,7 +454,7 @@ func (tsm *Manager) UnsubscribeMBD(subID string, handler *completionhandler.Comp
 	resolve, reject := handler.Register()
 
 	unsubMsg := mbdmsg.MBDUnsubscribeRequest{
-		AttestationCertificate: tsm.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tsm.crypto.AttestationCertificate(),*/
 		SubscriptionID:         subID,
 	}
 	unsubReqId := tsm.GenerateRequestId()

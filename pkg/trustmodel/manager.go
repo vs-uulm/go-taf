@@ -6,7 +6,6 @@ import (
 	"github.com/vs-uulm/go-taf/pkg/command"
 	"github.com/vs-uulm/go-taf/pkg/communication"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/go-taf/pkg/crypto"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 	messages "github.com/vs-uulm/go-taf/pkg/message"
 	tasmsg "github.com/vs-uulm/go-taf/pkg/message/tas"
@@ -28,7 +27,6 @@ type Manager struct {
 	trustModelTemplateRepo map[string]core.TrustModelTemplate
 	v2xObserver            EntityObserver //observer based on V2X_CPM messages
 	tchObserver            EntityObserver //observer based on TCH messages
-	crypto                 *crypto.Crypto
 	outbox                 chan core.Message
 }
 
@@ -39,7 +37,6 @@ func NewManager(tafContext core.TafContext, channels core.TafChannels) (*Manager
 		trustModelTemplateRepo: TemplateRepository,
 		v2xObserver:            CreateListener(tafContext.Configuration.V2X.NodeTTLsec, tafContext.Configuration.V2X.CheckIntervalSec),
 		tchObserver:            CreateListener(tafContext.Configuration.V2X.NodeTTLsec, tafContext.Configuration.V2X.CheckIntervalSec),
-		crypto:                 tafContext.Crypto,
 		outbox:                 channels.OutgoingMessageChannel,
 	}
 

@@ -3,9 +3,9 @@ package brussels_0_0_1
 import (
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	internaltrustmodelstructure "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 )
 
 type TrustModelInstance struct {

@@ -3,7 +3,7 @@ package tlee
 import (
 	"errors"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"log/slog"
 )
 
@@ -12,8 +12,7 @@ TLEE represents an internal TLEE as part of the TAF that can be used for debuggi
 TLEE implementation.
 */
 type TLEE struct {
-	logger        *slog.Logger
-	debuggingMode bool
+	logger *slog.Logger
 }
 
 type CurrentEntry struct {
@@ -22,10 +21,9 @@ type CurrentEntry struct {
 	opinions    []subjectivelogic.Opinion
 }
 
-func SpawnNewTLEE(logger *slog.Logger, filePath string, debuggingMode bool) *TLEE {
+func SpawnNewTLEE(logger *slog.Logger) *TLEE {
 	return &TLEE{
-		logger:        logger,
-		debuggingMode: debuggingMode,
+		logger: logger,
 	}
 
 }

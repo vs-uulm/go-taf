@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"github.com/vs-uulm/go-taf/pkg/config"
-	"github.com/vs-uulm/go-taf/pkg/crypto"
 	"log/slog"
 )
 
@@ -15,5 +14,4 @@ type TafContext struct {
 	Logger        *slog.Logger
 	Context       context.Context
 	Identifier    string
-	Crypto        *crypto.Crypto
 }

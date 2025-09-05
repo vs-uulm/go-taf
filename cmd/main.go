@@ -11,7 +11,6 @@ import (
 	"github.com/vs-uulm/go-taf/internal/version"
 	"github.com/vs-uulm/go-taf/pkg/communication"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/go-taf/pkg/crypto"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 	"github.com/vs-uulm/go-taf/pkg/trustassessment"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel"
@@ -59,17 +58,11 @@ func main() {
 	defer time.Sleep(1 * time.Second) // TODO: replace this cleanup interval with waitgroups
 	defer cancelFunc()
 
-	cryptoLib, err := crypto.NewCrypto(logging.CreateChildLogger(logger, "Crypto Library"), tafConfig.Crypto.KeyFolder, tafConfig.Crypto.Enabled)
-	if err != nil {
-		logger.Error("Error initializing crypto library")
-	}
-
 	tafContext := core.TafContext{
 		Configuration: tafConfig,
 		Logger:        logger,
 		Context:       ctx,
 		Identifier:    tafConfig.Identifier,
-		Crypto:        cryptoLib,
 	}
 
 	//Channels

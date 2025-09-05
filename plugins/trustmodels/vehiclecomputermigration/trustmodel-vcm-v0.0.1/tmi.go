@@ -3,9 +3,8 @@ package trustmodel_vcm_v0_0_1
 import (
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	internaltrustmodelstructure "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 )
 
 type TrustModelInstance struct {
@@ -32,8 +31,8 @@ func (e *TrustModelInstance) Fingerprint() uint32 {
 }
 
 func (e *TrustModelInstance) Structure() trustmodelstructure.TrustGraphStructure {
-	return internaltrustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
-		internaltrustmodelstructure.NewAdjacencyEntryDTO("TAF", []string{"VC1", "VC2"}),
+	return trustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
+		trustmodelstructure.NewAdjacencyEntryDTO("TAF", []string{"VC1", "VC2"}),
 	})
 }
 
@@ -42,10 +41,10 @@ func (e *TrustModelInstance) Values() map[string][]trustmodelstructure.TrustRela
 	opinionVC2, _ := subjectivelogic.NewOpinion(e.omega2.Belief(), e.omega2.Disbelief(), e.omega2.Uncertainty(), e.omega2.BaseRate())
 	return map[string][]trustmodelstructure.TrustRelationship{
 		"VC1": {
-			internaltrustmodelstructure.NewTrustRelationshipDTO("TAF", "VC1", &opinionVC1),
+			trustmodelstructure.NewTrustRelationshipDTO("TAF", "VC1", &opinionVC1),
 		},
 		"VC2": {
-			internaltrustmodelstructure.NewTrustRelationshipDTO("TAF", "VC2", &opinionVC2),
+			trustmodelstructure.NewTrustRelationshipDTO("TAF", "VC2", &opinionVC2),
 		},
 	}
 }

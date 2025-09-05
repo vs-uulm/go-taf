@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	internaltrustmodelstructure "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 	"hash/fnv"
 	"regexp"
 	"sort"
@@ -167,9 +166,9 @@ func (e *TrustModelInstance) updateStructure() {
 	}
 	egoTargets = append(egoTargets, vehicleIdentifier(e.sourceID))
 
-	e.currentStructure = internaltrustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
-		internaltrustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
-		internaltrustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
+	e.currentStructure = trustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
 	})
 }
 
@@ -190,11 +189,11 @@ func (e *TrustModelInstance) updateValues() {
 		//set values
 		values[scope] = []trustmodelstructure.TrustRelationship{
 			//full belief between V_* and C_*_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(source, observation, &FullBelief),
+			trustmodelstructure.NewTrustRelationshipDTO(source, observation, &FullBelief),
 			//opinion from V_ego on C_*_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(ego, observation, opinion),
+			trustmodelstructure.NewTrustRelationshipDTO(ego, observation, opinion),
 			//opinion from V_y on C_y_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(ego, source, e.sourceOpinion),
+			trustmodelstructure.NewTrustRelationshipDTO(ego, source, e.sourceOpinion),
 		}
 
 		//set RTL

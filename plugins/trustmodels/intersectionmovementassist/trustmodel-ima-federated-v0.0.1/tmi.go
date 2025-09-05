@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	internaltrustmodelstructure "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 	"hash/fnv"
 	"regexp"
 	"sort"
@@ -177,10 +176,10 @@ func (e *TrustModelInstance) updateStructure() {
 	//egoTargets = append(egoTargets, vehicleIdentifier(e.sourceID))
 	egoTargets = append(egoTargets, "MEC")
 
-	e.currentStructure = internaltrustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
-		internaltrustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
-		internaltrustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
-		internaltrustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{vehicleIdentifier(e.sourceID)}),
+	e.currentStructure = trustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
+		trustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{vehicleIdentifier(e.sourceID)}),
 	})
 }
 
@@ -202,13 +201,13 @@ func (e *TrustModelInstance) updateValues() {
 		//set values
 		values[scope] = []trustmodelstructure.TrustRelationship{
 			//full belief between V_* and C_*_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(source, observation, &FullBelief),
+			trustmodelstructure.NewTrustRelationshipDTO(source, observation, &FullBelief),
 			//opinion from V_ego on C_*_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(ego, observation, opinion),
+			trustmodelstructure.NewTrustRelationshipDTO(ego, observation, opinion),
 			//opinion from MEC to V_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(mec, source, e.sourceOpinion),
+			trustmodelstructure.NewTrustRelationshipDTO(mec, source, e.sourceOpinion),
 			//opinion from V_ego to MEC
-			internaltrustmodelstructure.NewTrustRelationshipDTO(ego, mec, &FullBelief),
+			trustmodelstructure.NewTrustRelationshipDTO(ego, mec, &FullBelief),
 		}
 
 		//set RTL

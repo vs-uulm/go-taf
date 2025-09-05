@@ -3,8 +3,7 @@ package core
 import (
 	"fmt"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
-	trustmodelstructure2 "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"strings"
 )
 
@@ -98,8 +97,8 @@ func MergeFullTMIIdentifier(client string, sessionID string, tmtID string, tmiID
 TMIAsString is a helper function to take a TMI as an input and returns a string representation of that TMI.
 */
 func TMIAsString(tmi TrustModelInstance) string {
-	graph := trustmodelstructure2.DumpStructure(tmi.Structure())
-	values := trustmodelstructure2.DumpValues(tmi.Values())
+	graph := trustmodelstructure.DumpStructure(tmi.Structure())
+	values := trustmodelstructure.DumpValues(tmi.Values())
 	output := fmt.Sprintf("Trust Model Instance\n---------------\nInternal ID:\t%s\nTMT:\t%s\nVersion:\t%d\nFingerprint:\t%d\n", tmi.ID(), tmi.Template().Identifier(), tmi.Version(), tmi.Fingerprint())
 	output = output + fmt.Sprintf("%s\n", graph)
 	output = output + fmt.Sprintf("%s\n", values)

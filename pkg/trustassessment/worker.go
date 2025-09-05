@@ -1,7 +1,6 @@
 package trustassessment
 
 import (
-	actualtlee "connect.informatik.uni-ulm.de/coordination/tlee-implementation/pkg/core"
 	"context"
 	"fmt"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
@@ -10,8 +9,8 @@ import (
 	"github.com/vs-uulm/go-taf/pkg/core"
 	"github.com/vs-uulm/go-taf/pkg/listener"
 	internaltlee "github.com/vs-uulm/go-taf/pkg/tlee"
+	"github.com/vs-uulm/go-taf/pkg/tlee/tleeinterface"
 	"github.com/vs-uulm/go-taf/pkg/trustdecision"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/tleeinterface"
 	"log/slog"
 )
 
@@ -40,13 +39,9 @@ results to the TAM. The worker also receives a reference to the TLEE instance to
 */
 func (tam *Manager) SpawnNewWorker(id int, workerQueue <-chan core.Command, workersToTam chan<- core.Command, tafContext core.TafContext, tmiListeners map[listener.TrustModelInstanceListener]bool) Worker {
 
-	tafConfig := tafContext.Configuration
 	var tlee tleeinterface.TLEE
-	if tafConfig.TLEE.UseInternalTLEE {
-		tlee = internaltlee.SpawnNewTLEE(logger.CreateChildLogger(tafContext.Logger, fmt.Sprintf("INTERNAL-TLEE-%d", id)), tafConfig.TLEE.FilePath, tafConfig.TLEE.DebuggingMode)
-	} else {
-		tlee = actualtlee.SpawnNewTLEE(logger.CreateChildLogger(tafContext.Logger, fmt.Sprintf("TLEE-%d", id)), tafConfig.TLEE.FilePath, tafConfig.TLEE.DebuggingMode)
-	}
+	//	if tafConfig.TLEE.UseInternalTLEE {
+	tlee = internaltlee.SpawnNewTLEE(logger.CreateChildLogger(tafContext.Logger, fmt.Sprintf("INTERNAL-TLEE-%d", id)))
 	return Worker{
 		tafContext:   tafContext,
 		id:           id,

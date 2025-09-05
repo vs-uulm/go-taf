@@ -12,37 +12,11 @@ type Configuration struct {
 	Identifier  string
 
 	Communication Communication
-	Crypto        Crypto
 	Debug         Debug
-	Evidence      Evidence
 	Logging       Log
 	TAM           TAM
-	TLEE          TLEE
 	V2X           V2X
 	WebUI         WebUI
-}
-
-/*
-Crypto configuration.
-*/
-type Crypto struct {
-	KeyFolder                 string
-	Enabled                   bool
-	IgnoreVerificationResults bool
-}
-
-/*
-Evidence-related configuration.
-*/
-type Evidence struct {
-	AIV AIV
-}
-
-/*
-AIV-related configuration.
-*/
-type AIV struct {
-	CheckInterval int //check interval (in msec) passed to the AIV for new AIV subscriptions
 }
 
 /*
@@ -87,15 +61,6 @@ type TAM struct {
 }
 
 /*
-TLEE-related configuration.
-*/
-type TLEE struct {
-	UseInternalTLEE bool //If set to true, the TAF will use an internal debugging TLEE instead of the real TLEE for debugging purposes.
-	DebuggingMode   bool
-	FilePath        string
-}
-
-/*
 V2X-Observer settings.
 */
 type V2X struct {
@@ -126,11 +91,6 @@ var (
 		TAM: TAM{
 			TrustModelInstanceShards: 1,
 		},
-		Crypto: Crypto{
-			KeyFolder:                 "res/cert/",
-			Enabled:                   true,
-			IgnoreVerificationResults: false,
-		},
 		Communication: Communication{
 			Handler: "kafka-based",
 			Kafka: Kafka{
@@ -145,16 +105,6 @@ var (
 			FixedSessionID:      "",
 			FixedSubscriptionID: "",
 			FixedRequestID:      "",
-		},
-		Evidence: Evidence{
-			AIV: AIV{
-				CheckInterval: 1000,
-			},
-		},
-		TLEE: TLEE{
-			UseInternalTLEE: false,
-			DebuggingMode:   false,
-			FilePath:        "debug/",
 		},
 		V2X: V2X{
 			NodeTTLsec:       5,

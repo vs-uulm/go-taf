@@ -3,7 +3,7 @@ package listener
 import (
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"time"
 )
 
