@@ -306,7 +306,7 @@ func parseObjectIdentifier(str string) (string, string, error) {
 	if res != nil && len(res) == 3 {
 		return res[1], res[2], nil
 	} else {
-		return "", "", fmt.Errorf("Invalid object identifier '" + str + "'")
+		return "", "", fmt.Errorf("Invalid object identifier '%s'", str)
 	}
 }
 
@@ -319,7 +319,7 @@ func parseVehicleIdentifier(str string) (string, error) {
 	if res != nil && len(res) == 2 {
 		return res[1], nil
 	} else {
-		return "", fmt.Errorf("Invalid vehicle identifier '" + str + "'")
+		return "", fmt.Errorf("Invalid vehicle identifier '%s'", str)
 	}
 }
 

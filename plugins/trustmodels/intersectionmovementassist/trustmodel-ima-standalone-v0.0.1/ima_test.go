@@ -68,7 +68,7 @@ func TestUntrustworthy(t *testing.T) {
 func RunTMI(t *testing.T, update1 map[core.EvidenceType]interface{}, update2 map[core.EvidenceType]interface{}) {
 
 	tafContext := createTafContext()
-	tlee := internaltlee.SpawnNewTLEE(tafContext.Logger, "", false)
+	tlee := internaltlee.SpawnNewTLEE(tafContext.Logger)
 	tmt := CreateTrustModelTemplate("IMA_STANDALONE", "0.0.1")
 
 	// Spawn spawner
@@ -129,7 +129,6 @@ func createTafContext() core.TafContext {
 		Logger:        slog.Default(),
 		Context:       nil,
 		Identifier:    "taf",
-		Crypto:        nil,
 	}
 }
 
