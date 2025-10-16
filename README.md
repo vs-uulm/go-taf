@@ -1,11 +1,20 @@
 # Trust Assessment Framework
 
-[![Latest Release](https://connect.informatik.uni-ulm.de/coordination/go-taf/-/badges/release.svg)](https://connect.informatik.uni-ulm.de/coordination/go-taf/-/releases)
-[![pipeline status](https://connect.informatik.uni-ulm.de/coordination/go-taf/badges/main/pipeline.svg)](https://connect.informatik.uni-ulm.de/coordination/go-taf/-/commits/main)
-
-
-
 This repository provides the latest prototype of the standalone Trust Assessment Framework.
+
+If you are using the TAF prototype for your own research, please use the following citation:
+
+> Trkulja, N., Hermann, A., Duhr, P.L., Meißner, E., Buchholz, M., Kargl, F. and Erb, B. 2025. Vehicle-to-Everything Trust: Enabling Autonomous Trust Assessment of V2X Data by Vehicles. *Proceedings of the 2025 Cyber Security in CarS Workshop (Taipei, Taiwan, 2025)*.
+```
+@inproceedings{Trkulja2025trust,
+	author = {Trkulja, Nata{\v{s}}a and Hermann, Artur and Duhr, Paul L. and Meißner, Echo and Buchholz, Michael and Kargl, Frank and Erb, Benjamin},
+	title = {Vehicle-to-Everything Trust: Enabling Autonomous Trust Assessment of V2X Data by Vehicles},
+	year = {2025},
+	booktitle = {Proceedings of the 2025 Cyber Security in CarS Workshop},
+	location = {Taipei, Taiwan},
+	series = {CSCS '25},
+}
+```
 
 ## Gettting Started
 
