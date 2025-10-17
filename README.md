@@ -7,10 +7,19 @@ If you are using the TAF prototype for your own research, please use the followi
 > Trkulja, N., Hermann, A., Duhr, P.L., Meißner, E., Buchholz, M., Kargl, F. and Erb, B. 2025. Vehicle-to-Everything Trust: Enabling Autonomous Trust Assessment of V2X Data by Vehicles. *Proceedings of the 2025 Cyber Security in CarS Workshop (Taipei, Taiwan, 2025)*.
 ```
 @inproceedings{Trkulja2025trust,
-	author = {Trkulja, Nata{\v{s}}a and Hermann, Artur and Duhr, Paul L. and Meißner, Echo and Buchholz, Michael and Kargl, Frank and Erb, Benjamin},
+	author = {Trkulja, Nata\v{s}a and Hermann, Artur and Duhr, Paul Lukas and Mei\ss{}ner, Echo and Buchholz, Michael and Kargl, Frank and Erb, Benjamin},
 	title = {Vehicle-to-Everything Trust: Enabling Autonomous Trust Assessment of V2X Data by Vehicles},
 	year = {2025},
-	booktitle = {Proceedings of the 2025 Cyber Security in CarS Workshop},
+	isbn = {9798400719288},
+	publisher = {Association for Computing Machinery},
+	address = {New York, NY, USA},
+	url = {https://doi.org/10.1145/3736130.3762691},
+	doi = {10.1145/3736130.3762691},
+	abstract = {Connected and automated vehicles rely on data from various entities to support safety-critical applications such as Cooperative Adaptive Cruise Control (CACC). However, unauthorized data manipulation through, for example, data injection attacks can compromise vehicle safety and lead to incidents. Existing vehicular security mechanisms, such as Misbehavior Detection System (MBD), have limitations in detecting and mitigating all types of threats on their own. To address these limitations, our prior work has proposed the concept of a Trust Assessment Framework (TAF), which assesses data trustworthiness by combining evidence from multiple security systems operating as trust sources. However, TAF as a concept has not been extensively evaluated in safety-critical Cooperative Driving (CD) applications. In this work, we refine the architecture of the TAF and implement a software prototype based on it. We integrate the TAF prototype with a CACC simulation environment and implement three types of data injection attacks. We demonstrate that by incorporating multiple security mechanisms as trust sources, the TAF significantly improves attack detection performance and reduces the number of crashes by 86\% compared to using a single security mechanism, such as MBD.},
+	booktitle = {Proceedings of the 2nd Cyber Security in CarS Workshop},
+	articleno = {8},
+	numpages = {14},
+	keywords = {Trust assessment framework, V2X network security, cooperative driving, cyber-physical systems},
 	location = {Taipei, Taiwan},
 	series = {CSCS '25},
 }
