@@ -27,6 +27,12 @@ If you are using the TAF prototype for your own research, please use the followi
 }
 ```
 
+### Acknowledgments
+
+This work is partially funded by the [HORIZON CONNECT](https://horizon-connect.eu/) project under EU grant agreement no. 101069688.
+
+This work is partially funded by the German Federal Ministry for Research, Technology and Space through the [ConnRAD](https://www.connrad-projekt.de/) project under grant agreement no. 16KISR036
+
 
 ## Gettting Started
 
