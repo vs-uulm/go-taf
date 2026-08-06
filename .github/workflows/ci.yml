@@ -1,0 +1,249 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: make
+
+  changelog:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract release notes
+        run: |
+          mkdir -p out
+          awk 'BEGIN { found = 0 } /^## / { if (found) exit; found = 1 } found { print }' Changelog.md > out/Description.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: out/Description.md
+          retention-days: 1
+
+  build:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+            make_target: build
+          - goos: windows
+            goarch: amd64
+            make_target: build-with-webui
+          - goos: linux
+            goarch: amd64
+            make_target: build
+          - goos: linux
+            goarch: amd64
+            make_target: build-with-webui
+          - goos: darwin
+            goarch: amd64
+            make_target: build
+          - goos: darwin
+            goarch: arm64
+            make_target: build
+          - goos: darwin
+            goarch: amd64
+            make_target: build-with-webui
+          - goos: darwin
+            goarch: arm64
+            make_target: build-with-webui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build release artifact
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          MAKE_TARGET: ${{ matrix.make_target }}
+        run: |
+          make "${MAKE_TARGET}"
+          mkdir -p dist
+          variant="${MAKE_TARGET#build}"
+          ext=""
+          if [ "${GOOS}" = "windows" ]; then
+            ext=".exe"
+          fi
+          filename="go-taf${variant}_${GOOS}-${GOARCH}${ext}"
+          mv out/main* "dist/${filename}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-taf-${{ matrix.make_target }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+  cleanup-dev-artifacts:
+    if: github.ref == 'refs/heads/v2.0.0-dev'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Remove older dev artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const keepPriorRuns = 3;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            const devArtifacts = artifacts
+              .filter((artifact) => artifact.name.startsWith('dev-go-taf-'))
+              .filter((artifact) => artifact.workflow_run?.head_branch === 'v2.0.0-dev')
+              .filter((artifact) => artifact.workflow_run?.id !== context.runId)
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            const keptRunIds = new Set();
+            for (const artifact of devArtifacts) {
+              keptRunIds.add(artifact.workflow_run.id);
+              if (keptRunIds.size === keepPriorRuns) {
+                break;
+              }
+            }
+
+            for (const artifact of devArtifacts) {
+              if (keptRunIds.has(artifact.workflow_run.id)) {
+                continue;
+              }
+
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+              });
+            }
+
+  build-dev:
+    if: github.ref == 'refs/heads/v2.0.0-dev'
+    runs-on: ubuntu-latest
+    needs: cleanup-dev-artifacts
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+            make_target: build
+          - goos: windows
+            goarch: amd64
+            make_target: build-with-webui
+          - goos: linux
+            goarch: amd64
+            make_target: build
+          - goos: linux
+            goarch: amd64
+            make_target: build-with-webui
+          - goos: darwin
+            goarch: amd64
+            make_target: build
+          - goos: darwin
+            goarch: arm64
+            make_target: build
+          - goos: darwin
+            goarch: amd64
+            make_target: build-with-webui
+          - goos: darwin
+            goarch: arm64
+            make_target: build-with-webui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build dev artifact
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          MAKE_TARGET: ${{ matrix.make_target }}
+        run: |
+          make "${MAKE_TARGET}"
+          mkdir -p dist
+          variant="${MAKE_TARGET#build}"
+          ext=""
+          if [ "${GOOS}" = "windows" ]; then
+            ext=".exe"
+          fi
+          filename="go-taf${variant}_${GOOS}-${GOARCH}${ext}"
+          mv out/main* "dist/${filename}"
+
+      - name: Upload dev artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-go-taf-${{ matrix.make_target }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - changelog
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-artifacts/release-notes/Description.md
+          files: release-artifacts/go-taf-*/*
