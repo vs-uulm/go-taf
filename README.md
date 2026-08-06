@@ -1,5 +1,6 @@
 # Trust Assessment Framework
 
+[![CI](https://github.com/vs-uulm/go-taf/actions/workflows/ci.yml/badge.svg?branch=v2.0.0-dev)](https://github.com/vs-uulm/go-taf/actions/workflows/ci.yml)
 
 This repository provides the latest prototype of the standalone Trust Assessment Framework.
 
@@ -128,4 +129,3 @@ make clean-structs
 ```
 
 Again, please note that adding new schemas/structs will require manual code changes in addition to the auto-generation of the structs.
-
