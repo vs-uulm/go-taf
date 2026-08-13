@@ -6,6 +6,7 @@ import (
 
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/trustdecision"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
 )
@@ -22,9 +23,19 @@ type TrustModelInstance struct {
 	targetTrustee      string
 }
 
-func (tmi *TrustModelInstance) Decide(proposition string) core.TrustDecision {
-	//TODO implement me
-	panic("implement me")
+func (e *TrustModelInstance) Decide(atls map[string]subjectivelogic.QueryableOpinion) map[string]core.TrustDecision {
+	rtls := e.RTLs()
+	trustDecisions := make(map[string]core.TrustDecision, len(atls))
+	for proposition, atlOpinion := range atls {
+		rtlOpinion, exists := rtls[proposition]
+		if !exists {
+			//no RTL for proposition found
+			trustDecisions[proposition] = core.UNDECIDABLE //If no RTL is found, we set trust decision to UNDECIDABLE as default
+		} else {
+			trustDecisions[proposition] = trustdecision.DecideByProjectedProbability(atlOpinion, rtlOpinion)
+		}
+	}
+	return trustDecisions
 }
 
 func (tmi *TrustModelInstance) decide(proposition string) core.TrustDecision {

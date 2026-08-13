@@ -77,7 +77,7 @@ type TrustModelInstance interface {
 	/*
 		Decides for the proposition the final trust level based on ATL and RTL.
 	*/
-	Decide(proposition string) TrustDecision
+	Decide(atls map[string]subjectivelogic.QueryableOpinion) map[string]TrustDecision
 }
 
 /*

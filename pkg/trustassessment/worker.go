@@ -3,6 +3,8 @@ package trustassessment
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/internal/logger"
 	"github.com/vs-uulm/go-taf/pkg/command"
@@ -11,7 +13,6 @@ import (
 	internaltlee "github.com/vs-uulm/go-taf/pkg/tlee"
 	"github.com/vs-uulm/go-taf/pkg/tlee/tleeinterface"
 	"github.com/vs-uulm/go-taf/pkg/trustdecision"
-	"log/slog"
 )
 
 /*
@@ -177,19 +178,16 @@ func (worker *Worker) executeTLEE(fullTmiId string, tmi core.TrustModelInstance)
 }
 
 func (worker *Worker) executeTDE(fullTmiId string, tmi core.TrustModelInstance, tag *string, atls map[string]subjectivelogic.QueryableOpinion) core.AtlResultSet {
-	rtls := tmi.RTLs()
+
+	//calculate projected probabilities for ResultSet
 	projectedProbabilities := make(map[string]float64, len(atls))
-	trustDecisions := make(map[string]core.TrustDecision, len(atls))
 	for proposition, atlOpinion := range atls {
-		rtlOpinion, exists := rtls[proposition]
-		if !exists {
-			worker.logger.Error("Could not find RTL in trust model instance for proposition "+proposition, "TMI ID", fullTmiId)
-			trustDecisions[proposition] = core.UNDECIDABLE //If no RTL is found, we set trust decision to UNDECIDABLE as default
-		} else {
-			trustDecisions[proposition] = trustdecision.Decide(atlOpinion, rtlOpinion)
-		}
 		projectedProbabilities[proposition] = trustdecision.ProjectProbability(atlOpinion)
 	}
+
+	//execute trust decision as a TMI-specific function
+	trustDecisions := tmi.Decide(atls)
+
 	resultSet := core.CreateAtlResultSet(tmi.ID(), tmi.Version(), tag, atls, projectedProbabilities, trustDecisions)
 	return resultSet
 }
