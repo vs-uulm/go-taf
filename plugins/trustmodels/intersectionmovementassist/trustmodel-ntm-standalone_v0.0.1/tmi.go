@@ -2,11 +2,12 @@ package trustmodel_ntm_standalone_v0_0_1
 
 import (
 	"fmt"
+	"hash/fnv"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"hash/fnv"
 )
 
 type TrustModelInstance struct {
@@ -22,6 +23,16 @@ type TrustModelInstance struct {
 	currentFingerprint uint32
 
 	ewmaAlpha float64
+}
+
+func (tmi *TrustModelInstance) Decide(proposition string) core.TrustDecision {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (tmi *TrustModelInstance) decide(proposition string) core.TrustDecision {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (tmi *TrustModelInstance) ID() string {

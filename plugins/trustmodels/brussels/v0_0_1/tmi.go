@@ -19,6 +19,11 @@ type TrustModelInstance struct {
 	fingerprint uint32
 }
 
+func (e *TrustModelInstance) decide(proposition string) core.TrustDecision {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (e *TrustModelInstance) ID() string {
 	return e.id
 }
@@ -87,4 +92,9 @@ func (e *TrustModelInstance) Cleanup() {
 
 func (e *TrustModelInstance) String() string {
 	return core.TMIAsString(e)
+}
+
+func (e *TrustModelInstance) Decide(proposition string) core.TrustDecision {
+	//TODO:
+	return core.UNDECIDABLE
 }

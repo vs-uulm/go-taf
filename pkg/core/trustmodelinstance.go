@@ -2,16 +2,14 @@ package core
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
-	"strings"
 )
 
-/*
-TrustModelInstance (TMI) represent a concrete instance of trust model, spawned from a specific TrustModelTemplate.
-A TMI is stateful entity to which update operations can be applied on, and from which properties can be queried
-in order to run ATL calculations.
-*/
+// TrustModelInstance represents a concrete instance of a trust model spawned from a template.
+// It holds the model's state and provides methods for inspection, updates, and lifecycle management.
 type TrustModelInstance interface {
 	/*
 		ID returns the (short) ID of the trust model instance. This ID is unique inside a session and for each trust model template.
@@ -75,6 +73,11 @@ type TrustModelInstance interface {
 		String returns a string representation of the TMI.
 	*/
 	String() string
+
+	/*
+		Decides for the proposition the final trust level based on ATL and RTL.
+	*/
+	Decide(proposition string) TrustDecision
 }
 
 /*

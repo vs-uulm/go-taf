@@ -18,6 +18,16 @@ type TrustModelInstance struct {
 	fingerprint uint32
 }
 
+func (e *TrustModelInstance) Decide(proposition string) core.TrustDecision {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (e *TrustModelInstance) decide(proposition string) core.TrustDecision {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (e *TrustModelInstance) ID() string {
 	return e.id
 }
