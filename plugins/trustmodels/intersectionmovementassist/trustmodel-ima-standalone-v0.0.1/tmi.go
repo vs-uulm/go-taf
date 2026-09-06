@@ -297,12 +297,14 @@ func objectIdentifier(id string, source string) string {
 	return fmt.Sprintf("C_%s_%s", source, id)
 }
 
+var objectIdentifierPattern = regexp.MustCompile(`^C_(\d+)_(\d+)$`)
+var vehicleIdentifierPattern = regexp.MustCompile(`^(?:V|vehicle)_(\d+|ego).*$`)
+
 /*
 parseObjectIdentifier is a helper function to extract plain identifiers from an object identifier string.
 */
 func parseObjectIdentifier(str string) (string, string, error) {
-	pattern := regexp.MustCompile(`^C_(\d+)_(\d+)$`)
-	res := pattern.FindStringSubmatch(str)
+	res := objectIdentifierPattern.FindStringSubmatch(str)
 	if res != nil && len(res) == 3 {
 		return res[1], res[2], nil
 	} else {
@@ -314,8 +316,7 @@ func parseObjectIdentifier(str string) (string, string, error) {
 parseVehicleIdentifier is a helper function to extract plain identifiers from a vehicle identifier string.
 */
 func parseVehicleIdentifier(str string) (string, error) {
-	pattern := regexp.MustCompile(`^(?:V|vehicle)_(\d+|ego).*$`)
-	res := pattern.FindStringSubmatch(str)
+	res := vehicleIdentifierPattern.FindStringSubmatch(str)
 	if res != nil && len(res) == 2 {
 		return res[1], nil
 	} else {
