@@ -4,6 +4,9 @@
 //    v2XCpm, err := UnmarshalV2XCpm(bytes)
 //    bytes, err = v2XCpm.Marshal()
 //
+//    v2XCam, err := UnmarshalV2XCam(bytes)
+//    bytes, err = v2XCam.Marshal()
+//
 //    v2XNtm, err := UnmarshalV2XNtm(bytes)
 //    bytes, err = v2XNtm.Marshal()
 
@@ -18,6 +21,16 @@ func UnmarshalV2XCpm(data []byte) (V2XCpm, error) {
 }
 
 func (r *V2XCpm) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func UnmarshalV2XCam(data []byte) (V2XCam, error) {
+	var r V2XCam
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *V2XCam) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
@@ -49,6 +62,27 @@ type V2XCpm struct {
 type PerceivedObjectContainer struct {
 	NumberOfPerceivedObjects float64  `json:"numberOfPerceivedObjects"`
 	Objects                  []Object `json:"objects"`
+}
+
+type V2XCam struct {
+	Latitude      float64     `json:"latitude"`
+	Longitude     float64     `json:"longitude"`
+	Opinions      CamOpinions `json:"opinions"`
+	ReferenceTime int64       `json:"referenceTime"`
+	SourceID      float64     `json:"sourceId"`
+	// Unique identifier for this message.
+	Tag *string `json:"tag,omitempty"`
+}
+
+type CamOpinions struct {
+	Position CamPositionOpinion `json:"position"`
+}
+
+type CamPositionOpinion struct {
+	BaseRate    float64 `json:"baserate"`
+	Belief      float64 `json:"belief"`
+	Disbelief   float64 `json:"disbelief"`
+	Uncertainty float64 `json:"uncertainty"`
 }
 
 type Object struct {

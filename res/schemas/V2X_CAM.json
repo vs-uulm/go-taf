@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "$wrapper": "https://connect.informatik.uni-ulm.de/coordination/taf-implementation/-/tree/main/TAF_External_Interfaces/Messaging/GENERIC_ONE_WAY/",
+  "$id": "https://connect.informatik.uni-ulm.de/coordination/taf-implementation/-/tree/main/TAF_External_Interfaces/Messaging/V2X_CAM/",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["referenceTime", "sourceId", "latitude", "longitude", "opinions"],
+  "properties": {
+    "referenceTime": {
+      "type": "integer"
+    },
+    "sourceId": {
+      "type": "integer"
+    },
+    "latitude": {
+      "type": "number"
+    },
+    "longitude": {
+      "type": "number"
+    },
+    "opinions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position"],
+      "properties": {
+        "position": {
+          "$ref": "#/definitions/PositionOpinion"
+        }
+      }
+    },
+    "tag": {
+      "description": "Unique identifier for this message.",
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "PositionOpinion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["belief", "disbelief", "uncertainty", "baserate"],
+      "properties": {
+        "belief": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "disbelief": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "uncertainty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "baserate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

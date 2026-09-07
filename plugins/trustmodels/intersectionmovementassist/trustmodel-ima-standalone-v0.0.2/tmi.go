@@ -57,6 +57,20 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 			e.incrementVersion()
 			e.updateValues()
 		}
+	case trustmodelupdate.RefreshCAM:
+		if update.SourceID() == e.sourceID {
+			camOpinion, err := subjectivelogic.NewOpinion(
+				update.Opinion().Belief,
+				update.Opinion().Disbelief,
+				update.Opinion().Uncertainty,
+				update.Opinion().BaseRate,
+			)
+			if err == nil {
+				e.sourceOpinion = &camOpinion
+				e.updateValues()
+				e.incrementVersion()
+			}
+		}
 	case trustmodelupdate.UpdateAtomicTrustOpinion:
 		trustee := update.Trustee()
 		if strings.HasPrefix(trustee, "V_") || strings.HasPrefix(trustee, "vehicle_") {

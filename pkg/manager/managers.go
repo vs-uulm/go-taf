@@ -98,6 +98,7 @@ The TrustModelManager is an internal component responsible for handling trust mo
 type TrustModelManager interface {
 	SetManagers(managers TafManagers)
 	HandleV2xCpmMessage(cmd command.HandleOneWay[v2xmsg.V2XCpm])
+	HandleV2xCamMessage(cmd command.HandleOneWay[v2xmsg.V2XCam])
 	HandleTchNotify(cmd command.HandleNotify[tchmsg.TchNotify])
 	HandleTasTmtDiscover(cmd command.HandleRequest[tasmsg.TasTmtDiscover])
 	ResolveTMT(identifier string) core.TrustModelTemplate

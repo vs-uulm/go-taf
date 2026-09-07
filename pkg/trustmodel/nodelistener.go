@@ -3,7 +3,19 @@ package trustmodel
 import (
 	"sync"
 	"time"
+
+	"github.com/vs-uulm/go-taf/cmd/flags"
 )
+
+var simulationTime = struct {
+	sync.RWMutex
+	ns int64
+}{}
+
+type observer interface {
+	handleNodeAdded(identifier string)
+	handleNodeRemoved(identifier string)
+}
 
 /*
 EntityObserver implements the observer pattern and provides an interface to register listeners to be called when new
@@ -16,30 +28,47 @@ type EntityObserver struct {
 	ttl       int
 }
 
-type observer interface {
-	handleNodeAdded(identifier string)
-	handleNodeRemoved(identifier string)
-}
-
 func CreateListener(ttlSeconds int, checkIntervalSeconds int) EntityObserver {
 	listener := EntityObserver{
 		nodes:     make(map[string]int64),
 		observers: make(map[observer]bool),
 		lock:      &sync.RWMutex{},
+		ttl:       ttlSeconds,
 	}
+	listener.startExpiryLoop(time.Duration(checkIntervalSeconds) * time.Second)
+	return listener
+}
+
+func (l *EntityObserver) startExpiryLoop(checkInterval time.Duration) {
 	go func() {
-		for now := range time.Tick(time.Duration(checkIntervalSeconds) * time.Second) {
-			listener.lock.Lock()
-			for key, timestamp := range listener.nodes {
-				if (now.Unix()) > timestamp+int64(ttlSeconds) {
-					delete(listener.nodes, key)
-					listener.notifyObserversOnNodeRemoved(key)
+		for range time.Tick(checkInterval) {
+			l.lock.Lock()
+			if flags.SIMULATION && simulationTimeValue() > 0 {
+				latest := simulationTimeValue()
+				for key, ts := range l.nodes {
+					if latest > ts+int64(l.ttl)*1e9 {
+						delete(l.nodes, key)
+						l.notifyObserversOnNodeRemoved(key)
+					}
+				}
+			} else {
+				now := time.Now().Unix()
+				for key, ts := range l.nodes {
+					if now > ts+int64(l.ttl) {
+						delete(l.nodes, key)
+						l.notifyObserversOnNodeRemoved(key)
+					}
 				}
 			}
-			listener.lock.Unlock()
+			l.lock.Unlock()
 		}
 	}()
-	return listener
+}
+
+func simulationTimeValue() int64 {
+	simulationTime.RLock()
+	defer simulationTime.RUnlock()
+	return simulationTime.ns
 }
 
 func (l *EntityObserver) registerObserver(observer observer) {
@@ -68,6 +97,25 @@ func (l *EntityObserver) AddNode(identifier string) {
 
 	_, exists := l.nodes[identifier]
 	l.nodes[identifier] = time.Now().Unix()
+	if !exists {
+		l.notifyObserversOnNodeAdded(identifier)
+	}
+}
+
+func (l *EntityObserver) AddNodeAt(identifier string, timestampNs int64) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	if flags.SIMULATION {
+		simulationTime.Lock()
+		if timestampNs > simulationTime.ns {
+			simulationTime.ns = timestampNs
+		}
+		simulationTime.Unlock()
+	}
+
+	_, exists := l.nodes[identifier]
+	l.nodes[identifier] = timestampNs
 	if !exists {
 		l.notifyObserversOnNodeAdded(identifier)
 	}

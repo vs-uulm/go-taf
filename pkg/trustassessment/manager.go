@@ -172,6 +172,8 @@ func (tam *Manager) handleTAMCommand(incomingCmd core.Command, tsm manager.Trust
 		tsm.HandleV2xNtm(cmd)
 	case command.HandleOneWay[v2xmsg.V2XCpm]:
 		tmm.HandleV2xCpmMessage(cmd)
+	case command.HandleOneWay[v2xmsg.V2XCam]:
+		tmm.HandleV2xCamMessage(cmd)
 	case command.HandleRequest[tasmsg.TasTmtDiscover]:
 		tmm.HandleTasTmtDiscover(cmd)
 	case command.HandleObserverEvent:

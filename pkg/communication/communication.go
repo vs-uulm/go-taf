@@ -304,6 +304,14 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					cmd := command.CreateV2xCpm(v2xCpm, rawMsg.Sender)
 					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
+			case messages.V2X_CAM:
+				v2xCam, err := v2xmsg.UnmarshalV2XCam(msg)
+				if err != nil {
+					ch.tafContext.Logger.Error("Error unmarshalling V2X_CAM: " + err.Error())
+				} else {
+					cmd := command.CreateV2xCam(v2xCam, rawMsg.Sender)
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
+				}
 			default:
 				ch.tafContext.Logger.Warn("Received message of type: " + rawMsg.MessageType + ". No processing implemented (yet) for this type of message.")
 			}
@@ -470,6 +478,8 @@ func UnmarshallMessage(schema messages.MessageSchema, msg []byte) (interface{}, 
 		extractedStruct, err = tchmsg.UnmarshalTchNotify(msg)
 	case messages.V2X_CPM:
 		extractedStruct, err = v2xmsg.UnmarshalV2XCpm(msg)
+	case messages.V2X_CAM:
+		extractedStruct, err = v2xmsg.UnmarshalV2XCam(msg)
 	case messages.V2X_NTM:
 		extractedStruct, err = v2xmsg.UnmarshalV2XNtm(msg)
 	default:
