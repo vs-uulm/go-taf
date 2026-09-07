@@ -63,3 +63,13 @@ func (c CommandType) String() string {
 type Command interface {
 	Type() CommandType
 }
+
+// Track wraps handle so that the settlement tracker is marked done once handle returns,
+// letting callers opt a command handler into settlement tracking without duplicating the
+// wrapping logic at each call site.
+func Track(settlement *SettlementTracker, handle func(Command)) func(Command) {
+	return func(cmd Command) {
+		defer settlement.Done(nil)
+		handle(cmd)
+	}
+}

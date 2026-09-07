@@ -63,6 +63,7 @@ func main() {
 		Logger:        logger,
 		Context:       ctx,
 		Identifier:    tafConfig.Identifier,
+		Settlement:    core.NewSettlementTracker(logger),
 	}
 
 	//Channels

@@ -18,19 +18,19 @@ func TestCompletionHandler(t *testing.T) {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	resolve, _ := ch.Register()
+	resolveFirst, _ := ch.Register()
 	go func() {
 		defer wg.Done()
 		time.Sleep(1 * time.Second)
-		resolve()
+		resolveFirst()
 	}()
 
 	wg.Add(1)
-	resolve, _ = ch.Register()
+	resolveSecond, _ := ch.Register()
 	go func() {
 		defer wg.Done()
 		time.Sleep(1 * time.Second)
-		resolve()
+		resolveSecond()
 	}()
 
 	wg.Add(1)

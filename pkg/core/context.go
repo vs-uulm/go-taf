@@ -14,4 +14,5 @@ type TafContext struct {
 	Logger        *slog.Logger
 	Context       context.Context
 	Identifier    string
+	Settlement    *SettlementTracker
 }

@@ -314,7 +314,9 @@ func (tsm *Manager) DispatchAivRequest(session session.Session, originalCmd comm
 					tsm.tam.DispatchToWorker(session, tmiID, tmiUpdateCmd)
 				}
 
+				tsm.tafContext.Settlement.Add()
 				go func() {
+					defer tsm.tafContext.Settlement.Done(nil)
 					time.Sleep(25 * time.Millisecond) // Wait until the update has propagated through the system.
 					allowCachedNow := true
 					originalCmd.Request.AllowCache = &allowCachedNow

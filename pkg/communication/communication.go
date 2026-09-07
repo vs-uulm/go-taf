@@ -102,6 +102,7 @@ type GenericJSONHeaderMessage struct {
 	ResponseId      string
 	ResponseTopic   string
 	SubscriberTopic string
+	AwaitSettlement bool
 }
 
 func (ch CommunicationInterface) handleIncomingMessages() {
@@ -135,7 +136,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAS_TMT_DISCOVER message: " + errs.Error())
 				} else {
 					cmd := command.CreateTasTmtDiscover(tasTmtDiscover, rawMsg.Sender, rawMsg.RequestId, rawMsg.ResponseTopic)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TAS_INIT_REQUEST:
 				tasInitReq, err := tasmsg.UnmarshalTasInitRequest(msg)
@@ -145,7 +146,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAS_INIT_REQUEST message: " + errs.Error())
 				} else {
 					cmd := command.CreateTasInitRequest(tasInitReq, rawMsg.Sender, rawMsg.RequestId, rawMsg.ResponseTopic)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TAS_TEARDOWN_REQUEST:
 				tasTeardownReq, err := tasmsg.UnmarshalTasTeardownRequest(msg)
@@ -155,7 +156,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAS_TEARDOWN_REQUEST message: " + errs.Error())
 				} else {
 					cmd := command.CreateTasTeardownRequest(tasTeardownReq, rawMsg.Sender, rawMsg.RequestId, rawMsg.ResponseTopic)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TAS_TA_REQUEST:
 				tasTaRequest, err := tasmsg.UnmarshalTasTaRequest(msg)
@@ -165,7 +166,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAS_TA_REQUEST message: " + errs.Error())
 				} else {
 					cmd := command.CreateTasTaRequest(tasTaRequest, rawMsg.Sender, rawMsg.RequestId, rawMsg.ResponseTopic)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TAS_SUBSCRIBE_REQUEST:
 				tasSubscribeRequest, err := tasmsg.UnmarshalTasSubscribeRequest(msg)
@@ -175,7 +176,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAS_SUBSCRIBE_REQUEST message: " + errs.Error())
 				} else {
 					cmd := command.CreateTasSubscribeRequest(tasSubscribeRequest, rawMsg.Sender, rawMsg.RequestId, rawMsg.ResponseTopic, rawMsg.SubscriberTopic)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TAS_UNSUBSCRIBE_REQUEST:
 				tasUnsubscribeRequest, err := tasmsg.UnmarshalTasUnsubscribeRequest(msg)
@@ -185,7 +186,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAS_UNSUBSCRIBE_REQUEST message: " + errs.Error())
 				} else {
 					cmd := command.CreateTasUnsubscribeRequest(tasUnsubscribeRequest, rawMsg.Sender, rawMsg.RequestId, rawMsg.ResponseTopic, rawMsg.SubscriberTopic)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TAQI_QUERY:
 				taqiQuery, err := taqimsg.UnmarshalTaqiQuery(msg)
@@ -195,7 +196,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAQI_QUERY message: " + errs.Error())
 				} else {
 					cmd := command.CreateTaqiQuery(taqiQuery, rawMsg.Sender, rawMsg.RequestId, rawMsg.ResponseTopic)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TAQI_RESULT:
 				taqiResult, err := taqimsg.UnmarshalTaqiResult(msg)
@@ -205,7 +206,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TAQI_RESULT message: " + errs.Error())
 				} else {
 					cmd := command.CreateTaqiResult(taqiResult, rawMsg.Sender, rawMsg.RequestId)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.AIV_RESPONSE:
 				aivResponse, err := aivmsg.UnmarshalAivResponse(msg)
@@ -215,7 +216,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for AIV_RESPONSE message: " + errs.Error())
 				} else {
 					cmd := command.CreateAivResponse(aivResponse, rawMsg.Sender, rawMsg.ResponseId)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.AIV_SUBSCRIBE_RESPONSE:
 				aivSubscribeResponse, err := aivmsg.UnmarshalAivSubscribeResponse(msg)
@@ -225,7 +226,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for AIV_SUBSCRIBE_RESPONSE message: " + errs.Error())
 				} else {
 					cmd := command.CreateAivSubscriptionResponse(aivSubscribeResponse, rawMsg.Sender, rawMsg.ResponseId)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.AIV_UNSUBSCRIBE_RESPONSE:
 				aivUnsubscribeResponse, err := aivmsg.UnmarshalAivUnsubscribeResponse(msg)
@@ -235,7 +236,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for AIV_UNSUBSCRIBE_RESPONSE message: " + errs.Error())
 				} else {
 					cmd := command.CreateAivUnsubscriptionResponse(aivUnsubscribeResponse, rawMsg.Sender, rawMsg.ResponseId)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.AIV_NOTIFY:
 				aivNotify, err := aivmsg.UnmarshalAivNotify(msg)
@@ -245,7 +246,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for AIV_NOTIFY message: " + errs.Error())
 				} else {
 					cmd := command.CreateAivNotify(aivNotify, rawMsg.Sender)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.MBD_SUBSCRIBE_RESPONSE:
 				mbdSubscribeResponse, err := mbdmsg.UnmarshalMBDSubscribeResponse(msg)
@@ -255,7 +256,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for MBD_SUBSCRIBE_RESPONSE message: " + errs.Error())
 				} else {
 					cmd := command.CreateMbdSubscriptionResponse(mbdSubscribeResponse, rawMsg.Sender, rawMsg.ResponseId)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.MBD_UNSUBSCRIBE_RESPONSE:
 				mbdUnsubscribeResponse, err := mbdmsg.UnmarshalMBDUnsubscribeResponse(msg)
@@ -265,7 +266,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for MBD_UNSUBSCRIBE_RESPONSE message: " + errs.Error())
 				} else {
 					cmd := command.CreateMbdUnsubscriptionResponse(mbdUnsubscribeResponse, rawMsg.Sender, rawMsg.ResponseId)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.MBD_NOTIFY:
 				mbdNotify, err := mbdmsg.UnmarshalMBDNotify(msg)
@@ -275,7 +276,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for MBD_NOTIFY message: " + errs.Error())
 				} else {
 					cmd := command.CreateMbdNotify(mbdNotify, rawMsg.Sender)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.TCH_NOTIFY:
 				tchNotify, err := tchmsg.UnmarshalTchNotify(msg)
@@ -285,7 +286,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Incomplete message header for TCH_NOTIFY message: " + errs.Error())
 				} else {
 					cmd := command.CreateTchNotify(tchNotify, rawMsg.Sender)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.V2X_NTM:
 				v2xNtm, err := v2xmsg.UnmarshalV2XNtm(msg)
@@ -293,7 +294,7 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Error unmarshalling V2X_NTM: " + err.Error())
 				} else {
 					cmd := command.CreateV2xNtm(v2xNtm, rawMsg.Sender)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			case messages.V2X_CPM:
 				v2xCpm, err := v2xmsg.UnmarshalV2XCpm(msg)
@@ -301,13 +302,23 @@ func (ch CommunicationInterface) handleIncomingMessages() {
 					ch.tafContext.Logger.Error("Error unmarshalling V2X_CPM: " + err.Error())
 				} else {
 					cmd := command.CreateV2xCpm(v2xCpm, rawMsg.Sender)
-					ch.channels.TAMChannel <- cmd
+					ch.dispatchToTAM(cmd, rawMsg.AwaitSettlement)
 				}
 			default:
 				ch.tafContext.Logger.Warn("Received message of type: " + rawMsg.MessageType + ". No processing implemented (yet) for this type of message.")
 			}
 		}
 	}
+}
+
+func (ch CommunicationInterface) dispatchToTAM(cmd core.Command, awaitSettlement bool) {
+	if awaitSettlement {
+		if err := ch.tafContext.Settlement.WaitIdle(ch.tafContext.Context); err != nil {
+			ch.tafContext.Logger.Error("Settlement completed with an error", "error", err)
+		}
+	}
+	ch.tafContext.Settlement.Add()
+	ch.channels.TAMChannel <- cmd
 }
 
 // Takes a raw message and checks whether required fields are set for GENERIC_REQUEST messages.
