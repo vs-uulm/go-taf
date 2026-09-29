@@ -9,4 +9,6 @@ const (
 	WeightedFusion
 	ConsensusAndCompromiseFusion
 	NoFusion
+	ProportionalFusion
+	EpistemicCumulativeFusion
 )
