@@ -16,6 +16,8 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+
+	"github.com/vs-uulm/go-taf/cmd/flags"
 )
 
 type Manager struct {
@@ -127,6 +129,31 @@ func (tmm *Manager) HandleV2xCpmMessage(cmd command.HandleOneWay[v2xmsg.V2XCpm])
 				updateCmd := command.CreateHandleTMIUpdate(fullTMIID, cmd.OneWay.Tag, trustmodelupdate.CreateRefreshCPM(sender, objects))
 				tmm.tam.DispatchToWorkerByFullTMIID(fullTMIID, updateCmd)
 			}
+		}
+	}
+}
+
+func (tmm *Manager) HandleV2xCamMessage(cmd command.HandleOneWay[v2xmsg.V2XCam]) {
+	sender := fmt.Sprintf("%g", cmd.OneWay.SourceID)
+	if flags.SIMULATION {
+		tmm.v2xObserver.AddNodeAt(sender, cmd.OneWay.ReferenceTime)
+	} else {
+		tmm.v2xObserver.AddNode(sender)
+	}
+
+	targetTMIIDs := make([]string, 0)
+	for _, tmt := range tmm.trustModelTemplateRepo {
+		if tmt.Type() == core.VEHICLE_TRIGGERED_TRUST_MODEL {
+			results, err := tmm.tam.QueryTMIs("//*/*/" + tmt.Identifier() + "/" + sender)
+			if err == nil {
+				targetTMIIDs = append(targetTMIIDs, results...)
+			}
+		}
+	}
+	if len(targetTMIIDs) > 0 {
+		for _, fullTMIID := range targetTMIIDs {
+			updateCmd := command.CreateHandleTMIUpdate(fullTMIID, cmd.OneWay.Tag, trustmodelupdate.CreateRefreshCAM(sender, cmd.OneWay.Opinions.Position, cmd.OneWay.ReferenceTime))
+			tmm.tam.DispatchToWorkerByFullTMIID(fullTMIID, updateCmd)
 		}
 	}
 }

@@ -43,6 +43,7 @@ const (
 	TCH_TC_RESPONSE               = "TCH_TC_RESPONSE"
 	TEST_MESSAGE                  = "TEST_MESSAGE"
 	V2X_CPM                       = "V2X_CPM"
+	V2X_CAM                       = "V2X_CAM"
 	V2X_NTM                       = "V2X_NTM"
 )
 
@@ -87,6 +88,7 @@ var SchemaMap = map[string]MessageSchema{
 	TCH_TC_RESPONSE:               TCH_TC_RESPONSE,
 	TEST_MESSAGE:                  TEST_MESSAGE,
 	V2X_CPM:                       V2X_CPM,
+	V2X_CAM:                       V2X_CAM,
 	V2X_NTM:                       V2X_NTM,
 }
 
@@ -131,5 +133,6 @@ var ServiceMap = map[MessageSchema]string{
 	TCH_TC_RESPONSE:               "UNKNOWN",
 	TEST_MESSAGE:                  "INVALID",
 	V2X_CPM:                       "V2X",
+	V2X_CAM:                       "V2X",
 	V2X_NTM:                       "V2X",
 }

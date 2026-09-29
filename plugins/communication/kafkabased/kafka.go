@@ -66,25 +66,24 @@ func NewKafkaBasedHandler(tafContext core.TafContext, inboxChannel chan<- core.M
 }
 
 func handleOutgoingMessages(tafContext core.TafContext, logger *slog.Logger, producer sarama.AsyncProducer, outboxChannel <-chan core.Message) {
+	go func() {
+		for msg := range outboxChannel {
+			kafkaMsg := &sarama.ProducerMessage{
+				Topic:    msg.Destination(),
+				Value:    sarama.ByteEncoder(msg.Bytes()),
+				Metadata: time.Now(),
+			}
+			producer.Input() <- kafkaMsg
+		}
+	}()
+
 	for {
 		select {
-		case msg := <-outboxChannel:
-
-			kafkaMsg := &sarama.ProducerMessage{
-				Topic: msg.Destination(),
-				Value: sarama.ByteEncoder(msg.Bytes()),
-			}
-
-			producer.Input() <- kafkaMsg
-
-			select {
-			case success := <-producer.Successes():
-				msgAsStr := string(msg.Bytes())
-				//logger.Info("Sent message", "Sender", msg.Source(), "Receiving Topic", msg.Destination(), "Message:", msgAsStr, "Offset", success.Offset)
-				util.UNUSED(success, msgAsStr)
-			case err := <-producer.Errors():
-				logger.Error(fmt.Sprintf("Failed to send message: %v", err))
-			}
+		case success := <-producer.Successes():
+			sendTime, _ := success.Metadata.(time.Time)
+			logger.Debug("Kafka send latency", "topic", success.Topic, "latency_ms", time.Since(sendTime).Milliseconds(), "offset", success.Offset)
+		case err := <-producer.Errors():
+			logger.Error(fmt.Sprintf("Failed to send message: %v", err))
 		}
 	}
 }
@@ -129,10 +128,13 @@ func (h *consumerHandler) Cleanup(sarama.ConsumerGroupSession) error {
 
 func (h *consumerHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
-		//convert Kafka message to internally wrapped message
+		receiveTime := time.Now()
+		logger := h.logger
+		logger.Debug("Kafka message received", "topic", msg.Topic, "offset", msg.Offset, "timestamp", msg.Timestamp)
 		internalMsg := core.NewMessage(msg.Value, "", msg.Topic)
 		h.inboxChannel <- internalMsg
 		sess.MarkMessage(msg, "")
+		util.UNUSED(receiveTime, logger)
 	}
 	return nil
 }
