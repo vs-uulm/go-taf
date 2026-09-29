@@ -2,14 +2,16 @@ package trustmodel_smtd_v0_0_1
 
 import (
 	"fmt"
-	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
-	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
-	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
 	"hash/fnv"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
+	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/trustdecision"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
 )
 
 type TrustModelInstance struct {
@@ -26,6 +28,10 @@ type TrustModelInstance struct {
 	currentFingerprint uint32
 	rtls               map[string]subjectivelogic.QueryableOpinion
 	staticRTL          subjectivelogic.QueryableOpinion
+}
+
+func (tmi *TrustModelInstance) Decide(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
+	return trustdecision.DecideByProjectedProbability(atl, rtl)
 }
 
 func (e *TrustModelInstance) ID() string {

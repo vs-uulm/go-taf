@@ -4,6 +4,7 @@ import (
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/internal/util"
 	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/trustdecision"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
 )
@@ -13,6 +14,10 @@ type TrustModelInstance struct {
 	version int
 
 	template TrustModelTemplate
+}
+
+func (tmi *TrustModelInstance) Decide(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
+	return trustdecision.DecideByProjectedProbability(atl, rtl)
 }
 
 func (e *TrustModelInstance) ID() string {

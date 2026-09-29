@@ -3,6 +3,8 @@ package trustassessment
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/internal/logger"
 	"github.com/vs-uulm/go-taf/pkg/command"
@@ -11,7 +13,6 @@ import (
 	internaltlee "github.com/vs-uulm/go-taf/pkg/tlee"
 	"github.com/vs-uulm/go-taf/pkg/tlee/tleeinterface"
 	"github.com/vs-uulm/go-taf/pkg/trustdecision"
-	"log/slog"
 )
 
 /*
@@ -186,7 +187,7 @@ func (worker *Worker) executeTDE(fullTmiId string, tmi core.TrustModelInstance, 
 			worker.logger.Error("Could not find RTL in trust model instance for proposition "+proposition, "TMI ID", fullTmiId)
 			trustDecisions[proposition] = core.UNDECIDABLE //If no RTL is found, we set trust decision to UNDECIDABLE as default
 		} else {
-			trustDecisions[proposition] = trustdecision.Decide(atlOpinion, rtlOpinion)
+			tmi.Decide(proposition, atlOpinion, rtlOpinion)
 		}
 		projectedProbabilities[proposition] = trustdecision.ProjectProbability(atlOpinion)
 	}

@@ -6,11 +6,11 @@ import (
 )
 
 /*
-Decide produces the final core.TrustDecision based on the actual and requested trust levels. There are three potential
+DecideByProjectedProbability produces the final core.TrustDecision based on the actual and requested trust levels. There are three potential
 results: core.TRUSTWORTHY, core.NOT_TRUSTWORTHY, and core.UNDECIDABLE.
 The latter one is used in case uncertainty is too high to decide upon the trustworthiness.
 */
-func Decide(atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
+func DecideByProjectedProbability(atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
 	if atl.Uncertainty() == 1 {
 		return core.UNDECIDABLE
 	} else {
