@@ -2,9 +2,10 @@ package tlee
 
 import (
 	"errors"
+	"log/slog"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
-	"log/slog"
 )
 
 /*
@@ -34,6 +35,14 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 	var ff func(opinion1 *subjectivelogic.Opinion, opinion2 *subjectivelogic.Opinion) (subjectivelogic.Opinion, error)
 
 	switch structure.Operator() {
+	case trustmodelstructure.ConsensusAndCompromiseFusion:
+		ff = subjectivelogic.ConsensusCompromiseFusion
+	case trustmodelstructure.EpistemicCumulativeFusion:
+		ff = subjectivelogic.CumulativeEpistemicFusion
+		/*
+			case trustmodelstructure.ProportionalFusion:
+				ff = subjectivelogic.ProportionalFusion
+		*/
 	case trustmodelstructure.AveragingFusion:
 		ff = subjectivelogic.AveragingFusion
 	case trustmodelstructure.ConstraintFusion:
@@ -194,6 +203,21 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 
 			var discounted subjectivelogic.Opinion
 
+			var discountOperator func(opinion1 *subjectivelogic.Opinion, opinion2 *subjectivelogic.Opinion) (subjectivelogic.Opinion, error)
+
+			switch structure.DiscountOperator() {
+			case trustmodelstructure.OppositeBeliefDiscount:
+				discountOperator = subjectivelogic.TrustDiscountingOppositeBelief
+			case trustmodelstructure.BaseRateSensitiveDiscount:
+				discountOperator = subjectivelogic.TrustDiscounting
+			case trustmodelstructure.DisbeliefFavouringDiscount:
+				discountOperator = subjectivelogic.TrustDiscountingDisbeliefFavouring
+			case trustmodelstructure.UncertaintyFavouringDiscount:
+				discountOperator = subjectivelogic.TrustDiscountingUncertaintyFavouring
+			default:
+				return nil, errors.New("Unsupported Discount Operator.")
+			}
+
 			switch len(opinions) {
 			case 0:
 				return nil, errors.New("an out of opinions without result")
@@ -202,7 +226,8 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 				results[scope] = &opinions[0]
 
 			case 2:
-				tmp, err := subjectivelogic.TrustDiscounting(&opinions[0], &opinions[1])
+
+				tmp, err := discountOperator(&opinions[0], &opinions[1])
 				if err != nil {
 					return nil, errors.New("subjective logic error")
 				}
