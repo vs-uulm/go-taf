@@ -2,15 +2,16 @@ package trustmodel_ima_federated_v0_0_1
 
 import (
 	"fmt"
-	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
-	"github.com/vs-uulm/go-taf/pkg/core"
-	internaltrustmodelstructure "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
-	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 	"hash/fnv"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
+	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/trustdecision"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
 )
 
 type TrustModelInstance struct {
@@ -29,6 +30,10 @@ type TrustModelInstance struct {
 	staticRTL          subjectivelogic.QueryableOpinion
 
 	ewmaAlpha float64
+}
+
+func (tmi *TrustModelInstance) Decide(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
+	return trustdecision.DecideByProjectedProbability(atl, rtl)
 }
 
 func (e *TrustModelInstance) ID() string {
@@ -57,6 +62,20 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 			e.updateFingerprint()
 			e.incrementVersion()
 			e.updateValues()
+		}
+	case trustmodelupdate.RefreshCAM:
+		if update.SourceID() == e.sourceID {
+			camOpinion, err := subjectivelogic.NewOpinion(
+				update.Opinion().Belief,
+				update.Opinion().Disbelief,
+				update.Opinion().Uncertainty,
+				update.Opinion().BaseRate,
+			)
+			if err == nil {
+				e.sourceOpinion = &camOpinion
+				e.updateValues()
+				e.incrementVersion()
+			}
 		}
 	case trustmodelupdate.UpdateAtomicTrustOpinion:
 		trustee := update.Trustee()
@@ -177,10 +196,10 @@ func (e *TrustModelInstance) updateStructure() {
 	//egoTargets = append(egoTargets, vehicleIdentifier(e.sourceID))
 	egoTargets = append(egoTargets, "MEC")
 
-	e.currentStructure = internaltrustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
-		internaltrustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
-		internaltrustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
-		internaltrustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{vehicleIdentifier(e.sourceID)}),
+	e.currentStructure = trustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
+		trustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{vehicleIdentifier(e.sourceID)}),
 	})
 }
 
@@ -202,13 +221,13 @@ func (e *TrustModelInstance) updateValues() {
 		//set values
 		values[scope] = []trustmodelstructure.TrustRelationship{
 			//full belief between V_* and C_*_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(source, observation, &FullBelief),
+			trustmodelstructure.NewTrustRelationshipDTO(source, observation, &FullBelief),
 			//opinion from V_ego on C_*_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(ego, observation, opinion),
+			trustmodelstructure.NewTrustRelationshipDTO(ego, observation, opinion),
 			//opinion from MEC to V_*
-			internaltrustmodelstructure.NewTrustRelationshipDTO(mec, source, e.sourceOpinion),
+			trustmodelstructure.NewTrustRelationshipDTO(mec, source, e.sourceOpinion),
 			//opinion from V_ego to MEC
-			internaltrustmodelstructure.NewTrustRelationshipDTO(ego, mec, &FullBelief),
+			trustmodelstructure.NewTrustRelationshipDTO(ego, mec, &FullBelief),
 		}
 
 		//set RTL
@@ -298,16 +317,18 @@ func objectIdentifier(id string, source string) string {
 	return fmt.Sprintf("C_%s_%s", source, id)
 }
 
+var objectIdentifierPattern = regexp.MustCompile(`^C_(\d+)_(\d+)$`)
+var vehicleIdentifierPattern = regexp.MustCompile(`^V_(\d+|ego).*$`)
+
 /*
 parseObjectIdentifier is a helper function to extract plain identifiers from an object identifier string.
 */
 func parseObjectIdentifier(str string) (string, string, error) {
-	pattern := regexp.MustCompile(`^C_(\d+)_(\d+)$`)
-	res := pattern.FindStringSubmatch(str)
+	res := objectIdentifierPattern.FindStringSubmatch(str)
 	if res != nil && len(res) == 3 {
 		return res[1], res[2], nil
 	} else {
-		return "", "", fmt.Errorf("Invalid object identifier '" + str + "'")
+		return "", "", fmt.Errorf("Invalid object identifier '%s'", str)
 	}
 }
 
@@ -315,12 +336,11 @@ func parseObjectIdentifier(str string) (string, string, error) {
 parseVehicleIdentifier is a helper function to extract plain identifiers from a vehicle identifier string.
 */
 func parseVehicleIdentifier(str string) (string, error) {
-	pattern := regexp.MustCompile(`^V_(\d+|ego).*$`)
-	res := pattern.FindStringSubmatch(str)
+	res := vehicleIdentifierPattern.FindStringSubmatch(str)
 	if res != nil && len(res) == 2 {
 		return res[1], nil
 	} else {
-		return "", fmt.Errorf("Invalid vehicle identifier '" + str + "'")
+		return "", fmt.Errorf("Invalid vehicle identifier '%s'", str)
 	}
 }
 

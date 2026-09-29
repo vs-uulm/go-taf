@@ -2,12 +2,13 @@ package trustmodel_ntm_standalone_v0_0_1
 
 import (
 	"fmt"
+	"hash/fnv"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	internaltrustmodelstructure "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
+	"github.com/vs-uulm/go-taf/pkg/trustdecision"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
-	"hash/fnv"
 )
 
 type TrustModelInstance struct {
@@ -23,6 +24,15 @@ type TrustModelInstance struct {
 	currentFingerprint uint32
 
 	ewmaAlpha float64
+}
+
+func (tmi *TrustModelInstance) Decide(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
+	return trustdecision.DecideByProjectedProbability(atl, rtl)
+}
+
+func (tmi *TrustModelInstance) decide(proposition string) core.TrustDecision {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (tmi *TrustModelInstance) ID() string {
@@ -57,8 +67,8 @@ func (tmi *TrustModelInstance) RTLs() map[string]subjectivelogic.QueryableOpinio
 }
 
 func (tmi *TrustModelInstance) Structure() trustmodelstructure.TrustGraphStructure {
-	return internaltrustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
-		internaltrustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{trusteeIdentifier(tmi.targetTrustee)}),
+	return trustmodelstructure.NewTrustGraphDTO(trustmodelstructure.CumulativeFusion, trustmodelstructure.OppositeBeliefDiscount, []trustmodelstructure.AdjacencyListEntry{
+		trustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{trusteeIdentifier(tmi.targetTrustee)}),
 	})
 }
 
@@ -109,7 +119,7 @@ func (tmi *TrustModelInstance) Values() map[string][]trustmodelstructure.TrustRe
 
 	return map[string][]trustmodelstructure.TrustRelationship{
 		trusteeIdentifier(tmi.targetTrustee): {
-			internaltrustmodelstructure.NewTrustRelationshipDTO("MEC", trusteeIdentifier(tmi.targetTrustee), &trusteeOpinion),
+			trustmodelstructure.NewTrustRelationshipDTO("MEC", trusteeIdentifier(tmi.targetTrustee), &trusteeOpinion),
 		},
 	}
 }

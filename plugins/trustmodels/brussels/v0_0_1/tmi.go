@@ -3,9 +3,10 @@ package brussels_0_0_1
 import (
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/trustdecision"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	internaltrustmodelstructure "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 )
 
 type TrustModelInstance struct {
@@ -17,6 +18,10 @@ type TrustModelInstance struct {
 	omega1      subjectivelogic.Opinion
 	omega2      subjectivelogic.Opinion
 	fingerprint uint32
+}
+
+func (tmi *TrustModelInstance) Decide(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
+	return trustdecision.DecideByProjectedProbability(atl, rtl)
 }
 
 func (e *TrustModelInstance) ID() string {

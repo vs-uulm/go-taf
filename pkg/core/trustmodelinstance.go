@@ -2,17 +2,14 @@ package core
 
 import (
 	"fmt"
-	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
-	trustmodelstructure2 "github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 	"strings"
+
+	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 )
 
-/*
-TrustModelInstance (TMI) represent a concrete instance of trust model, spawned from a specific TrustModelTemplate.
-A TMI is stateful entity to which update operations can be applied on, and from which properties can be queried
-in order to run ATL calculations.
-*/
+// TrustModelInstance represents a concrete instance of a trust model spawned from a template.
+// It holds the model's state and provides methods for inspection, updates, and lifecycle management.
 type TrustModelInstance interface {
 	/*
 		ID returns the (short) ID of the trust model instance. This ID is unique inside a session and for each trust model template.
@@ -76,6 +73,11 @@ type TrustModelInstance interface {
 		String returns a string representation of the TMI.
 	*/
 	String() string
+
+	/*
+		Decides for the proposition the final trust level based on ATL and RTL.
+	*/
+	Decide(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) TrustDecision
 }
 
 /*
@@ -98,8 +100,8 @@ func MergeFullTMIIdentifier(client string, sessionID string, tmtID string, tmiID
 TMIAsString is a helper function to take a TMI as an input and returns a string representation of that TMI.
 */
 func TMIAsString(tmi TrustModelInstance) string {
-	graph := trustmodelstructure2.DumpStructure(tmi.Structure())
-	values := trustmodelstructure2.DumpValues(tmi.Values())
+	graph := trustmodelstructure.DumpStructure(tmi.Structure())
+	values := trustmodelstructure.DumpValues(tmi.Values())
 	output := fmt.Sprintf("Trust Model Instance\n---------------\nInternal ID:\t%s\nTMT:\t%s\nVersion:\t%d\nFingerprint:\t%d\n", tmi.ID(), tmi.Template().Identifier(), tmi.Version(), tmi.Fingerprint())
 	output = output + fmt.Sprintf("%s\n", graph)
 	output = output + fmt.Sprintf("%s\n", values)

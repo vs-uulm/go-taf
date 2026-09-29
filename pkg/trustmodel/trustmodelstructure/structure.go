@@ -3,17 +3,29 @@ package trustmodelstructure
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 	"strings"
 )
 
-type TrustGraphDTO struct {
-	operator         trustmodelstructure.FusionOperator
-	discountOperator trustmodelstructure.DiscountOperator
-	adjacencyList    []trustmodelstructure.AdjacencyListEntry
+// A TrustGraphStructure defines the graph-structural properties of a trust model. It does not define scopes, as scopes are only defined for the values of a graph (i.e., trust opinions)
+type TrustGraphStructure interface {
+	Operator() FusionOperator
+	DiscountOperator() DiscountOperator
+	AdjacencyList() []AdjacencyListEntry
 }
 
-func NewTrustGraphDTO(operator trustmodelstructure.FusionOperator, discountOperator trustmodelstructure.DiscountOperator, entries []trustmodelstructure.AdjacencyListEntry) *TrustGraphDTO {
+// A AdjacencyListEntry defines all outgoing edges of a source node by listing the corresponding target nodes of these edges.
+type AdjacencyListEntry interface {
+	SourceNode() string
+	TargetNodes() []string
+}
+
+type TrustGraphDTO struct {
+	operator         FusionOperator
+	discountOperator DiscountOperator
+	adjacencyList    []AdjacencyListEntry
+}
+
+func NewTrustGraphDTO(operator FusionOperator, discountOperator DiscountOperator, entries []AdjacencyListEntry) *TrustGraphDTO {
 	return &TrustGraphDTO{
 		operator:         operator,
 		discountOperator: discountOperator,
@@ -21,15 +33,15 @@ func NewTrustGraphDTO(operator trustmodelstructure.FusionOperator, discountOpera
 	}
 }
 
-func (t *TrustGraphDTO) Operator() trustmodelstructure.FusionOperator {
+func (t *TrustGraphDTO) Operator() FusionOperator {
 	return t.operator
 }
 
-func (t *TrustGraphDTO) DiscountOperator() trustmodelstructure.DiscountOperator {
+func (t *TrustGraphDTO) DiscountOperator() DiscountOperator {
 	return t.discountOperator
 }
 
-func (t *TrustGraphDTO) AdjacencyList() []trustmodelstructure.AdjacencyListEntry {
+func (t *TrustGraphDTO) AdjacencyList() []AdjacencyListEntry {
 	return t.adjacencyList
 }
 
@@ -53,7 +65,7 @@ func (a *AdjacencyEntryDTO) TargetNodes() []string {
 	return a.targetNodes
 }
 
-func DumpStructure(structure trustmodelstructure.TrustGraphStructure) string {
+func DumpStructure(structure TrustGraphStructure) string {
 	result := []string{"++ Trust Graph Structure ++"}
 	// result = append(result, "Operator: "+structure.Operator()) //TODO: fix
 	for _, list := range structure.AdjacencyList() {
@@ -64,8 +76,8 @@ func DumpStructure(structure trustmodelstructure.TrustGraphStructure) string {
 
 func (r *TrustGraphDTO) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Operator      string                                   `json:"operator"`
-		AdjacencyList []trustmodelstructure.AdjacencyListEntry `json:"adjacency_list"`
+		Operator      string               `json:"operator"`
+		AdjacencyList []AdjacencyListEntry `json:"adjacency_list"`
 	}{
 		Operator:      "", // TODO: r.Operator(),
 		AdjacencyList: r.AdjacencyList(),

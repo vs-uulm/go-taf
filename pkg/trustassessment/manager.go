@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/vs-uulm/go-taf/cmd/flags"
 	"github.com/vs-uulm/go-taf/internal/flow/completionhandler"
 	logging "github.com/vs-uulm/go-taf/internal/logger"
 	"github.com/vs-uulm/go-taf/pkg/command"
 	"github.com/vs-uulm/go-taf/pkg/communication"
 	"github.com/vs-uulm/go-taf/pkg/config"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/go-taf/pkg/crypto"
 	"github.com/vs-uulm/go-taf/pkg/listener"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 	messages "github.com/vs-uulm/go-taf/pkg/message"
@@ -39,7 +39,6 @@ type Manager struct {
 	outbox   chan core.Message
 	tsm      manager.TrustSourceManager
 	tmm      manager.TrustModelManager
-	crypto   *crypto.Crypto
 	//tmiID->latest ATLs/PPs/TDs
 	atlResults map[string]core.AtlResultSet
 	//tas sub ID->sessionID
@@ -61,7 +60,6 @@ func NewManager(tafContext core.TafContext, channels core.TafChannels) (*Manager
 		sessions:                    make(map[string]session.Session),
 		workersToTam:                make(chan core.Command, tafContext.Configuration.ChanBufSize),
 		logger:                      logging.CreateChildLogger(tafContext.Logger, "TAM"),
-		crypto:                      tafContext.Crypto,
 		outbox:                      channels.OutgoingMessageChannel,
 		atlResults:                  make(map[string]core.AtlResultSet),
 		tasSubscriptionsToSessionID: make(map[string]string),
@@ -89,6 +87,14 @@ func (tam *Manager) Run() {
 
 	tsm := tam.tsm
 	tmm := tam.tmm
+	handleWorkerCommand := tam.handleWorkerCommand
+	handleTAMCommand := func(cmd core.Command) {
+		tam.handleTAMCommand(cmd, tsm, tmm)
+	}
+	if flags.SIMULATION {
+		handleWorkerCommand = core.Track(tam.tafContext.Settlement, tam.handleWorkerCommand)
+		handleTAMCommand = core.Track(tam.tafContext.Settlement, handleTAMCommand)
+	}
 
 	tam.tamToWorkers = make([]chan core.Command, 0, tam.config.TAM.TrustModelInstanceShards)
 	for i := range tam.config.TAM.TrustModelInstanceShards {
@@ -110,68 +116,70 @@ func (tam *Manager) Run() {
 			}
 			return
 		case incomingCmd := <-tam.workersToTam:
-			switch cmd := incomingCmd.(type) {
-			case command.HandleATLUpdate:
-				tam.HandleATLUpdate(cmd)
-			default:
-				tam.logger.Warn("Command with no associated handling logic received by TAM from Worker", "Command Type", cmd.Type())
-			}
+			handleWorkerCommand(incomingCmd)
 		default:
 			select {
 			case incomingCmd := <-tam.workersToTam:
-				switch cmd := incomingCmd.(type) {
-				case command.HandleATLUpdate:
-					tam.HandleATLUpdate(cmd)
-				default:
-					tam.logger.Warn("Command with no associated handling logic received by TAM from Worker", "Command Type", cmd.Type())
-				}
+				handleWorkerCommand(incomingCmd)
 			case incomingCmd := <-tam.channels.TAMChannel:
-				switch cmd := incomingCmd.(type) {
-				// TAM Message Handling
-				case command.HandleRequest[tasmsg.TasInitRequest]:
-					tam.HandleTasInitRequest(cmd)
-				case command.HandleRequest[tasmsg.TasTeardownRequest]:
-					tam.HandleTasTeardownRequest(cmd)
-				case command.HandleRequest[tasmsg.TasTaRequest]:
-					tam.HandleTasTaRequest(cmd)
-				case command.HandleSubscriptionRequest[tasmsg.TasSubscribeRequest]:
-					tam.HandleTasSubscribeRequest(cmd)
-				case command.HandleSubscriptionRequest[tasmsg.TasUnsubscribeRequest]:
-					tam.HandleTasUnsubscribeRequest(cmd)
-				case command.HandleRequest[taqimsg.TaqiQuery]:
-					tam.HandleTaqiQuery(cmd)
-				// TSM Message Handling
-				case command.HandleResponse[aivmsg.AivResponse]:
-					tsm.HandleAivResponse(cmd)
-				case command.HandleResponse[aivmsg.AivSubscribeResponse]:
-					tsm.HandleAivSubscribeResponse(cmd)
-				case command.HandleResponse[aivmsg.AivUnsubscribeResponse]:
-					tsm.HandleAivUnsubscribeResponse(cmd)
-				case command.HandleNotify[aivmsg.AivNotify]:
-					tsm.HandleAivNotify(cmd)
-				case command.HandleResponse[mbdmsg.MBDSubscribeResponse]:
-					tsm.HandleMbdSubscribeResponse(cmd)
-				case command.HandleResponse[mbdmsg.MBDUnsubscribeResponse]:
-					tsm.HandleMbdUnsubscribeResponse(cmd)
-				case command.HandleNotify[mbdmsg.MBDNotify]:
-					tsm.HandleMbdNotify(cmd)
-				case command.HandleNotify[tchmsg.TchNotify]:
-					tmm.HandleTchNotify(cmd) //handle potential trigger based on trustee
-					tsm.HandleTchNotify(cmd) //handle evidence from TCH
-				case command.HandleNotify[v2xmsg.V2XNtm]:
-					tsm.HandleV2xNtm(cmd)
-				// TMM Message Handling
-				case command.HandleOneWay[v2xmsg.V2XCpm]:
-					tmm.HandleV2xCpmMessage(cmd)
-				case command.HandleRequest[tasmsg.TasTmtDiscover]:
-					tmm.HandleTasTmtDiscover(cmd)
-				case command.HandleObserverEvent:
-					tmm.HandleObserverEvent(cmd)
-				default:
-					tam.logger.Warn("Command with no associated handling logic received by TAM from Communication Handler", "Command Type", cmd.Type())
-				}
+				handleTAMCommand(incomingCmd)
 			}
 		}
+	}
+}
+
+func (tam *Manager) handleWorkerCommand(incomingCmd core.Command) {
+	switch cmd := incomingCmd.(type) {
+	case command.HandleATLUpdate:
+		tam.HandleATLUpdate(cmd)
+	default:
+		tam.logger.Warn("Command with no associated handling logic received by TAM from Worker", "Command Type", cmd.Type())
+	}
+}
+
+func (tam *Manager) handleTAMCommand(incomingCmd core.Command, tsm manager.TrustSourceManager, tmm manager.TrustModelManager) {
+	switch cmd := incomingCmd.(type) {
+	case command.HandleRequest[tasmsg.TasInitRequest]:
+		tam.HandleTasInitRequest(cmd)
+	case command.HandleRequest[tasmsg.TasTeardownRequest]:
+		tam.HandleTasTeardownRequest(cmd)
+	case command.HandleRequest[tasmsg.TasTaRequest]:
+		tam.HandleTasTaRequest(cmd)
+	case command.HandleSubscriptionRequest[tasmsg.TasSubscribeRequest]:
+		tam.HandleTasSubscribeRequest(cmd)
+	case command.HandleSubscriptionRequest[tasmsg.TasUnsubscribeRequest]:
+		tam.HandleTasUnsubscribeRequest(cmd)
+	case command.HandleRequest[taqimsg.TaqiQuery]:
+		tam.HandleTaqiQuery(cmd)
+	case command.HandleResponse[aivmsg.AivResponse]:
+		tsm.HandleAivResponse(cmd)
+	case command.HandleResponse[aivmsg.AivSubscribeResponse]:
+		tsm.HandleAivSubscribeResponse(cmd)
+	case command.HandleResponse[aivmsg.AivUnsubscribeResponse]:
+		tsm.HandleAivUnsubscribeResponse(cmd)
+	case command.HandleNotify[aivmsg.AivNotify]:
+		tsm.HandleAivNotify(cmd)
+	case command.HandleResponse[mbdmsg.MBDSubscribeResponse]:
+		tsm.HandleMbdSubscribeResponse(cmd)
+	case command.HandleResponse[mbdmsg.MBDUnsubscribeResponse]:
+		tsm.HandleMbdUnsubscribeResponse(cmd)
+	case command.HandleNotify[mbdmsg.MBDNotify]:
+		tsm.HandleMbdNotify(cmd)
+	case command.HandleNotify[tchmsg.TchNotify]:
+		tmm.HandleTchNotify(cmd)
+		tsm.HandleTchNotify(cmd)
+	case command.HandleNotify[v2xmsg.V2XNtm]:
+		tsm.HandleV2xNtm(cmd)
+	case command.HandleOneWay[v2xmsg.V2XCpm]:
+		tmm.HandleV2xCpmMessage(cmd)
+	case command.HandleOneWay[v2xmsg.V2XCam]:
+		tmm.HandleV2xCamMessage(cmd)
+	case command.HandleRequest[tasmsg.TasTmtDiscover]:
+		tmm.HandleTasTmtDiscover(cmd)
+	case command.HandleObserverEvent:
+		tmm.HandleObserverEvent(cmd)
+	default:
+		tam.logger.Warn("Command with no associated handling logic received by TAM from Communication Handler", "Command Type", cmd.Type())
 	}
 }
 
@@ -189,7 +197,7 @@ func (tam *Manager) HandleTasInitRequest(cmd command.HandleRequest[tasmsg.TasIni
 
 	sendErrorResponse := func(errorMsg string) {
 		response := tasmsg.TasInitResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errorMsg,
 			SessionID:              nil,
 			Success:                nil,
@@ -284,7 +292,7 @@ func (tam *Manager) HandleTasInitRequest(cmd command.HandleRequest[tasmsg.TasIni
 		success := "Session with trust model template '" + tmt.Identifier() + "' created."
 
 		response := tasmsg.TasInitResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  nil,
 			SessionID:              &sessionId,
 			Success:                &success,
@@ -332,7 +340,7 @@ func (tam *Manager) HandleTasTeardownRequest(cmd command.HandleRequest[tasmsg.Ta
 		errorMsg := "Session ID '" + cmd.Request.SessionID + "' not found."
 
 		response := tasmsg.TasTeardownResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errorMsg,
 			Success:                nil,
 		}
@@ -359,7 +367,7 @@ func (tam *Manager) HandleTasTeardownRequest(cmd command.HandleRequest[tasmsg.Ta
 
 	success := "Session with ID '" + cmd.Request.SessionID + "' successfully terminated."
 	response := tasmsg.TasTeardownResponse{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		Error:                  nil,
 		Success:                &success,
 	}
@@ -397,7 +405,7 @@ func (tam *Manager) HandleTasTaRequest(cmd command.HandleRequest[tasmsg.TasTaReq
 
 	sendErrorResponse := func(errMsg string) {
 		response := tasmsg.TasTaResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errMsg,
 			SessionID:              sessionID,
 		}
@@ -471,7 +479,7 @@ func (tam *Manager) HandleTasTaRequest(cmd command.HandleRequest[tasmsg.TasTaReq
 		}
 
 		response := tasmsg.TasTaResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  nil,
 			Results:                taResponseResults,
 			SessionID:              sessionID,
@@ -512,7 +520,7 @@ func (tam *Manager) HandleTasSubscribeRequest(cmd command.HandleSubscriptionRequ
 
 	sendErrorResponse := func(errMsg string) {
 		response := tasmsg.TasSubscribeResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errMsg,
 			SessionID:              sessionID,
 			SubscriptionID:         nil,
@@ -582,7 +590,7 @@ func (tam *Manager) HandleTasSubscribeRequest(cmd command.HandleSubscriptionRequ
 	//send TAS_SUBSCRIBE_RESPONSE
 	success := "Subscription successfully created."
 	response := tasmsg.TasSubscribeResponse{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		Error:                  nil,
 		SessionID:              sessionID,
 		SubscriptionID:         &subscriptionID,
@@ -629,7 +637,7 @@ func (tam *Manager) HandleTasSubscribeRequest(cmd command.HandleSubscriptionRequ
 	}
 
 	initialNotify := tasmsg.TasNotify{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		SessionID:              sessionID,
 		SubscriptionID:         subscriptionID,
 		Updates:                taResponseResults,
@@ -650,7 +658,7 @@ func (tam *Manager) HandleTasUnsubscribeRequest(cmd command.HandleSubscriptionRe
 
 	sendErrorResponse := func(errMsg string) {
 		response := tasmsg.TasUnsubscribeResponse{
-			AttestationCertificate: tam.crypto.AttestationCertificate(),
+			AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 			Error:                  &errMsg,
 			SessionID:              sessionID,
 			Success:                nil,
@@ -690,7 +698,7 @@ func (tam *Manager) HandleTasUnsubscribeRequest(cmd command.HandleSubscriptionRe
 	//send TAS_UNSUBSCRIBE_RESPONSE
 	success := "Subscription with ID '" + subscriptionID + "' successfully terminated."
 	response := tasmsg.TasUnsubscribeResponse{
-		AttestationCertificate: tam.crypto.AttestationCertificate(),
+		AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 		Error:                  nil,
 		SessionID:              sessionID,
 		Success:                &success,
@@ -799,7 +807,7 @@ func (tam *Manager) HandleATLUpdate(cmd command.HandleATLUpdate) {
 			}
 
 			notify := tasmsg.TasNotify{
-				AttestationCertificate: tam.crypto.AttestationCertificate(),
+				AttestationCertificate: "", /*tam.crypto.AttestationCertificate(),*/
 				SessionID:              sessionID,
 				SubscriptionID:         subscriptionID,
 				Updates:                taResponseResults,
@@ -830,6 +838,7 @@ func (tam *Manager) DispatchToWorker(session session.Session, tmiID string, cmd 
 
 func (tam *Manager) DispatchToWorkerByFullTMIID(fullTMI string, cmd core.Command) {
 	workerId := tam.getShardWorkerById(fullTMI)
+	tam.tafContext.Settlement.Add()
 	tam.tamToWorkers[workerId] <- cmd
 }
 
@@ -955,6 +964,7 @@ func (tam *Manager) notifyATLRemoved(fullTMI string) {
 }
 
 func (tam *Manager) DispatchToSelf(cmd core.Command) {
+	tam.tafContext.Settlement.Add()
 	tam.channels.TAMChannel <- cmd
 }
 

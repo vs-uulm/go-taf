@@ -50,14 +50,76 @@
                     "targetId": {
                       "type": "number"
                     },
-                    "check": {
+                     "check": {
+                       "type": "number"
+                    },
+                    "relative_position_error_x": {
+                      "type": "number"
+                    },
+                    "relative_position_error_y": {
+                      "type": "number"
+                    },
+                    "sender_speed_error_x": {
+                      "type": "number"
+                    },
+                    "sender_speed_error_y": {
+                      "type": "number"
+                    },
+                    "sender_acceleration_error_x": {
+                      "type": "number"
+                    },
+                    "sender_acceleration_error_y": {
+                      "type": "number"
+                    },
+                    "distance_to_road_edge_error": {
+                      "type": "number"
+                    },
+                    "receiver_time_error": {
+                      "type": "number"
+                    },
+                    "sender_heading_error_sin": {
+                      "type": "number"
+                    },
+                    "sender_heading_error_cos": {
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "targetId",
-                    "check"
-                  ]
+                  "required": [ "targetId" ],
+                  "oneOf": [{
+                    "required": [ "check" ],
+                    "not": {
+                      "anyOf": [
+                        { "required": [ "relative_position_error_x" ] },
+                        { "required": [ "relative_position_error_y" ] },
+                        { "required": [ "sender_speed_error_x" ] },
+                        { "required": [ "sender_speed_error_y" ] },
+                        { "required": [ "sender_acceleration_error_x" ] },
+                        { "required": [ "sender_acceleration_error_y" ] },
+                        { "required": [ "distance_to_road_edge_error" ] },
+                        { "required": [ "receiver_time_error" ] },
+                        { "required": [ "sender_heading_error_sin" ] },
+                        { "required": [ "sender_heading_error_cos" ] }
+                      ]
+                    }
+                  }, {
+                    "required": [
+                      "relative_position_error_x",
+                      "relative_position_error_y",
+                      "sender_speed_error_x",
+                      "sender_speed_error_y",
+                      "sender_acceleration_error_x",
+                      "sender_acceleration_error_y",
+                      "distance_to_road_edge_error",
+                      "receiver_time_error",
+                      "sender_heading_error_sin",
+                      "sender_heading_error_cos"
+                    ],
+                    "not": {
+                      "anyOf": [
+                        { "required": [ "check" ] }
+                      ]
+                    }
+                  }]
                 }
               },
               "V2XPduEvidence": {

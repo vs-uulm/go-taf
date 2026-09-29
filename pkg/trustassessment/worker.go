@@ -1,18 +1,19 @@
 package trustassessment
 
 import (
-	actualtlee "connect.informatik.uni-ulm.de/coordination/tlee-implementation/pkg/core"
 	"context"
 	"fmt"
+	"log/slog"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
+	"github.com/vs-uulm/go-taf/cmd/flags"
 	"github.com/vs-uulm/go-taf/internal/logger"
 	"github.com/vs-uulm/go-taf/pkg/command"
 	"github.com/vs-uulm/go-taf/pkg/core"
 	"github.com/vs-uulm/go-taf/pkg/listener"
 	internaltlee "github.com/vs-uulm/go-taf/pkg/tlee"
+	"github.com/vs-uulm/go-taf/pkg/tlee/tleeinterface"
 	"github.com/vs-uulm/go-taf/pkg/trustdecision"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/tleeinterface"
-	"log/slog"
 )
 
 /*
@@ -40,13 +41,9 @@ results to the TAM. The worker also receives a reference to the TLEE instance to
 */
 func (tam *Manager) SpawnNewWorker(id int, workerQueue <-chan core.Command, workersToTam chan<- core.Command, tafContext core.TafContext, tmiListeners map[listener.TrustModelInstanceListener]bool) Worker {
 
-	tafConfig := tafContext.Configuration
 	var tlee tleeinterface.TLEE
-	if tafConfig.TLEE.UseInternalTLEE {
-		tlee = internaltlee.SpawnNewTLEE(logger.CreateChildLogger(tafContext.Logger, fmt.Sprintf("INTERNAL-TLEE-%d", id)), tafConfig.TLEE.FilePath, tafConfig.TLEE.DebuggingMode)
-	} else {
-		tlee = actualtlee.SpawnNewTLEE(logger.CreateChildLogger(tafContext.Logger, fmt.Sprintf("TLEE-%d", id)), tafConfig.TLEE.FilePath, tafConfig.TLEE.DebuggingMode)
-	}
+	//	if tafConfig.TLEE.UseInternalTLEE {
+	tlee = internaltlee.SpawnNewTLEE(logger.CreateChildLogger(tafContext.Logger, fmt.Sprintf("INTERNAL-TLEE-%d", id)))
 	return Worker{
 		tafContext:   tafContext,
 		id:           id,
@@ -65,6 +62,10 @@ func (worker *Worker) Run() {
 		worker.logger.Info("Shutting down")
 	}()
 
+	handleCommand := worker.handleCommand
+	if flags.SIMULATION {
+		handleCommand = core.Track(worker.tafContext.Settlement, worker.handleCommand)
+	}
 	for {
 		// Each iteration, check whether we've been cancelled.
 		if err := context.Cause(worker.tafContext.Context); err != nil {
@@ -77,17 +78,21 @@ func (worker *Worker) Run() {
 			}
 			return
 		case incomingCmd := <-worker.workerQueue:
-			switch cmd := incomingCmd.(type) {
-			case command.HandleTMIInit:
-				worker.handleTMIInit(cmd)
-			case command.HandleTMIUpdate:
-				worker.handleTMIUpdate(cmd)
-			case command.HandleTMIDestroy:
-				worker.handleTMIDestroy(cmd)
-			default:
-				worker.logger.Warn("Command with no associated handling logic received by Worker", "Command Type", cmd.Type())
-			}
+			handleCommand(incomingCmd)
 		}
+	}
+}
+
+func (worker *Worker) handleCommand(incomingCmd core.Command) {
+	switch cmd := incomingCmd.(type) {
+	case command.HandleTMIInit:
+		worker.handleTMIInit(cmd)
+	case command.HandleTMIUpdate:
+		worker.handleTMIUpdate(cmd)
+	case command.HandleTMIDestroy:
+		worker.handleTMIDestroy(cmd)
+	default:
+		worker.logger.Warn("Command with no associated handling logic received by Worker", "Command Type", cmd.Type())
 	}
 }
 
@@ -110,6 +115,7 @@ func (worker *Worker) handleTMIInit(cmd command.HandleTMIInit) {
 		resultSet := worker.executeTDE(cmd.FullTmiID, worker.tmis[cmd.FullTmiID], nil, atls)
 
 		atlUpdateCmd := command.CreateHandleATLUpdate(resultSet, nil, cmd.FullTmiID)
+		worker.tafContext.Settlement.Add()
 		worker.workersToTam <- atlUpdateCmd
 	}
 }
@@ -144,6 +150,7 @@ func (worker *Worker) handleTMIUpdate(cmd command.HandleTMIUpdate) {
 			resultSet := worker.executeTDE(cmd.FullTmiID, tmi, cmd.Tag, atls)
 
 			atlUpdateCmd := command.CreateHandleATLUpdate(resultSet, cmd.Tag, cmd.FullTmiID)
+			worker.tafContext.Settlement.Add()
 			worker.workersToTam <- atlUpdateCmd
 		}
 	}
@@ -191,7 +198,7 @@ func (worker *Worker) executeTDE(fullTmiId string, tmi core.TrustModelInstance, 
 			worker.logger.Error("Could not find RTL in trust model instance for proposition "+proposition, "TMI ID", fullTmiId)
 			trustDecisions[proposition] = core.UNDECIDABLE //If no RTL is found, we set trust decision to UNDECIDABLE as default
 		} else {
-			trustDecisions[proposition] = trustdecision.Decide(atlOpinion, rtlOpinion)
+			tmi.Decide(proposition, atlOpinion, rtlOpinion)
 		}
 		projectedProbabilities[proposition] = trustdecision.ProjectProbability(atlOpinion)
 	}
