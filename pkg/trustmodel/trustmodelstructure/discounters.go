@@ -3,7 +3,7 @@ package trustmodelstructure
 type DiscountOperator int
 
 const (
-	DefaultDiscount = iota
+	DefaultDiscount DiscountOperator = iota
 	OppositeBeliefDiscount
 	UncertaintyFavouringDiscount
 	BaseRateSensitiveDiscount
