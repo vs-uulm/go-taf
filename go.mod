@@ -7,7 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/pterm/pterm v0.12.79
-	github.com/vs-uulm/go-subjectivelogic v0.2.3
+	github.com/vs-uulm/go-subjectivelogic v0.3.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 )
 
