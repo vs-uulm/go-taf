@@ -18,9 +18,11 @@ type TrustModelInstance struct {
 	version  int
 	template TrustModelTemplate
 
-	sourceID      string
-	sourceOpinion subjectivelogic.QueryableOpinion            // Opinion MEC -> V_sourceID
-	objects       map[string]subjectivelogic.QueryableOpinion // X : Opinion V_ego -> C_sourceID_{X}
+	targetVehicleID string // ID x of vehicle V_{x} that is the source of the data
+
+	tchOpinion subjectivelogic.QueryableOpinion // Opinion V_ego -> V_{sourceID}
+	ntmOpinion subjectivelogic.QueryableOpinion // Opinion V_{sourceID} -> C_sourceID_{X}
+	mbdOpinion subjectivelogic.QueryableOpinion // Opinion V_ego -> C_sourceID_{X}
 
 	currentStructure   trustmodelstructure.TrustGraphStructure
 	currentValues      map[string][]trustmodelstructure.TrustRelationship
@@ -57,16 +59,8 @@ func (e *TrustModelInstance) Template() core.TrustModelTemplate {
 func (e *TrustModelInstance) Update(update core.Update) bool {
 	oldVersion := e.Version()
 	switch update := update.(type) {
-	case trustmodelupdate.RefreshCPM:
-		topologyIsModified := e.processTopologyUpdate(update.Objects())
-		if topologyIsModified {
-			e.updateStructure()
-			e.updateFingerprint()
-			e.incrementVersion()
-			e.updateValues()
-		}
 	case trustmodelupdate.RefreshCAM:
-		if update.SourceID() == e.sourceID {
+		if update.SourceID() == e.targetVehicleID {
 			camOpinion, err := subjectivelogic.NewOpinion(
 				update.Opinion().Belief,
 				update.Opinion().Disbelief,
@@ -74,7 +68,8 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 				update.Opinion().BaseRate,
 			)
 			if err == nil {
-				e.sourceOpinion = &camOpinion
+
+				e.ntmOpinion = &camOpinion
 				e.updateValues()
 				e.incrementVersion()
 			}
@@ -83,19 +78,17 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 		trustee := update.Trustee()
 		if strings.HasPrefix(trustee, "V_") {
 			id, err := parseVehicleIdentifier(trustee)
-			if err == nil && id == e.sourceID {
-				e.sourceOpinion = update.Opinion()
+			if err == nil && id == e.targetVehicleID {
+				e.tchOpinion = update.Opinion()
 				e.updateValues()
 				e.incrementVersion()
 			}
 		} else if strings.HasPrefix(trustee, "C_") {
-			vecID, objID, err := parseObjectIdentifier(trustee)
+			_, _, err := parseObjectIdentifier(trustee)
 			if err == nil {
-				if _, ok := e.objects[objID]; ok && (vecID == e.sourceID) {
-					e.objects[objID] = update.Opinion()
-					e.updateValues()
-					e.incrementVersion()
-				}
+				e.mbdOpinion = update.Opinion()
+				e.updateValues()
+				e.incrementVersion()
 			}
 		}
 	default:
@@ -114,44 +107,7 @@ processTopologyUpdate reflects changes in the internal topology based upon the l
 In case there are topology changes due to the update, the function returns true. Otherwise, if the topology is not affected, it returns false.
 */
 func (e *TrustModelInstance) processTopologyUpdate(latestObjects []string) bool {
-	topologyChanged := false
-
-	addedObjects := make(map[string]struct{})
-	removedObjects := make(map[string]struct{}) //old objects will be placed here and will be deleted in case they are still used
-
-	for obj := range e.objects {
-		if obj != e.sourceID { //never remove the observation of vehicle on itself (C_{X}_{X})
-			removedObjects[obj] = struct{}{}
-		}
-	}
-
-	for _, object := range latestObjects {
-		if _, ok := e.objects[object]; ok {
-			//object existed before, so remove from the set of missing objects
-			delete(removedObjects, object)
-		} else {
-			//object is not yet known, so needs to be added
-			addedObjects[object] = struct{}{}
-		}
-	}
-
-	//For new objects: Add to topology with full uncertainty
-	if len(addedObjects) > 0 {
-		topologyChanged = true
-		for object := range addedObjects {
-			e.objects[object] = &FullUncertainty
-		}
-
-	}
-	/* Currently, we keep disappearing IDs. The following code would drop them.
-	if len(removedObjects) > 0 {
-		topologyChanged = true
-		for object, _ := range removedObjects {
-			delete(e.objects, object)
-		}
-	}
-	*/
-	return topologyChanged
+	return false
 }
 
 /*
@@ -161,9 +117,7 @@ sorted string identifiers and calculates a hash value.
 */
 func (e *TrustModelInstance) updateFingerprint() {
 	nodes := make([]string, 0)
-	for object := range e.objects {
-		nodes = append(nodes, object)
-	}
+	nodes = append(nodes, e.targetVehicleID)
 
 	sort.Strings(nodes)
 	stringFingerprint := strings.Join(nodes, "")
@@ -179,21 +133,10 @@ func (e *TrustModelInstance) updateFingerprint() {
 updateStructure updates the internally kept structure according to the latest topology.
 */
 func (e *TrustModelInstance) updateStructure() {
-	//Objects (observations) that originate from the sender vehicle
-	objects := make([]string, 0)
-	//Direct edges from the ego node to all others
-	egoTargets := make([]string, 0)
-	for object := range e.objects {
-		objects = append(objects, objectIdentifier(object, e.sourceID))
-		egoTargets = append(egoTargets, objectIdentifier(object, e.sourceID))
-	}
-	//egoTargets = append(egoTargets, vehicleIdentifier(e.sourceID))
-	egoTargets = append(egoTargets, "MEC")
-
 	e.currentStructure = trustmodelstructure.NewTrustGraphDTO(e.fusionOperator, e.discountingOperator, []trustmodelstructure.AdjacencyListEntry{
-		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
-		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
-		trustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{vehicleIdentifier(e.sourceID)}),
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), []string{vehicleIdentifier(e.targetVehicleID)}),
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), []string{objectIdentifier(e.targetVehicleID, e.targetVehicleID)}),
+		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.targetVehicleID), []string{objectIdentifier(e.targetVehicleID, e.targetVehicleID)}),
 	})
 }
 
@@ -204,29 +147,20 @@ func (e *TrustModelInstance) updateValues() {
 	values := make(map[string][]trustmodelstructure.TrustRelationship)
 	rtls := make(map[string]subjectivelogic.QueryableOpinion)
 
-	for obj, opinion := range e.objects {
+	ego := vehicleIdentifier("ego")
+	target := vehicleIdentifier(e.targetVehicleID)
+	observation := objectIdentifier(e.targetVehicleID, e.targetVehicleID)
+	scope := observation
 
-		ego := vehicleIdentifier("ego")
-		source := vehicleIdentifier(e.sourceID)
-		observation := objectIdentifier(obj, e.sourceID)
-		mec := "MEC"
-		scope := observation
-
-		//set values
-		values[scope] = []trustmodelstructure.TrustRelationship{
-			//full belief between V_* and C_*_*
-			trustmodelstructure.NewTrustRelationshipDTO(source, observation, &FullBelief),
-			//opinion from V_ego on C_*_*
-			trustmodelstructure.NewTrustRelationshipDTO(ego, observation, opinion),
-			//opinion from MEC to V_*
-			trustmodelstructure.NewTrustRelationshipDTO(mec, source, e.sourceOpinion),
-			//opinion from V_ego to MEC
-			trustmodelstructure.NewTrustRelationshipDTO(ego, mec, &FullBelief),
-		}
-
-		//set RTL
-		rtls[observation] = &RTL
+	//set values
+	values[scope] = []trustmodelstructure.TrustRelationship{
+		trustmodelstructure.NewTrustRelationshipDTO(ego, target, e.tchOpinion),
+		trustmodelstructure.NewTrustRelationshipDTO(ego, observation, e.mbdOpinion),
+		trustmodelstructure.NewTrustRelationshipDTO(target, observation, e.ntmOpinion),
 	}
+
+	//set RTL
+	rtls[observation] = &RTL
 
 	e.currentValues = values
 	e.rtls = rtls
@@ -236,16 +170,18 @@ func (e *TrustModelInstance) Initialize(params map[string]interface{}) {
 	//If a source ID has been defined, use it; otherwise, use ID of TMI
 	sourceId, exists := params["SourceId"]
 	if !exists {
-		e.sourceID = e.id
+		e.targetVehicleID = e.id
 	} else {
-		e.sourceID = sourceId.(string)
+		e.targetVehicleID = sourceId.(string)
 	}
 
 	e.version = 0
 	e.currentFingerprint = 0
 	e.rtls = map[string]subjectivelogic.QueryableOpinion{}
-	e.sourceOpinion = &FullUncertainty
-	e.objects[e.sourceID] = &FullUncertainty
+	e.tchOpinion = &FullUncertainty
+	e.ntmOpinion = &FullUncertainty
+	e.mbdOpinion = &FullUncertainty
+	e.targetVehicleID = ""
 
 	e.updateStructure()
 	e.updateFingerprint()
