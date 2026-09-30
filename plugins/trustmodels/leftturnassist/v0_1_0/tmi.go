@@ -29,6 +29,7 @@ type TrustModelInstance struct {
 	staticRTL          subjectivelogic.QueryableOpinion
 
 	fusionOperator      trustmodelstructure.FusionOperator
+	fusionWeightEgo     float64 // weight of V_ego's own opinions for ProportionalFusion, opinions via MEC get 1-fusionWeightEgo
 	discountingOperator trustmodelstructure.DiscountOperator
 
 	trustDecision func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision
@@ -190,8 +191,18 @@ func (e *TrustModelInstance) updateStructure() {
 	//egoTargets = append(egoTargets, vehicleIdentifier(e.sourceID))
 	egoTargets = append(egoTargets, "MEC")
 
+	egoEntry := trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets)
+	if e.fusionOperator == trustmodelstructure.ProportionalFusion {
+		weightedTargets := make(map[string]float64, len(egoTargets))
+		for _, target := range egoTargets {
+			weightedTargets[target] = e.fusionWeightEgo
+		}
+		weightedTargets["MEC"] = 1 - e.fusionWeightEgo
+		egoEntry = trustmodelstructure.NewWeightedAdjacencyEntryDTO(vehicleIdentifier("ego"), weightedTargets)
+	}
+
 	e.currentStructure = trustmodelstructure.NewTrustGraphDTO(e.fusionOperator, e.discountingOperator, []trustmodelstructure.AdjacencyListEntry{
-		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier("ego"), egoTargets),
+		egoEntry,
 		trustmodelstructure.NewAdjacencyEntryDTO(vehicleIdentifier(e.sourceID), objects),
 		trustmodelstructure.NewAdjacencyEntryDTO("MEC", []string{vehicleIdentifier(e.sourceID)}),
 	})

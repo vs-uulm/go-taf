@@ -107,6 +107,9 @@ func (t DynamicTrustModelTemplateSpawner) OnNewTrustee(identifier string, params
 OnNewVehicle spawns a new TMI upon an arriving vehicle. It has the following optional parameters to be used in the TAS_INIT
 
 	FUSION_OPERATOR 		: Aleatory_Cumulative|Epistemic_Cumulative|Weighted|Consensus_Compromise|Proportional
+								Proportional
+									Mandatory Params:
+												- PROPORTIONAL_FUSION_WEIGHT_EGO (weight in [0,1] of V_ego's own opinion; the opinion via MEC gets 1-weight)
 	DISCOUNTING_OPERATOR 	: Uncertainty_Favouring|Base_Rate_Sensitive|Disbelief_Favouring
 	TRUST_DECISION			: 	ProjectedProbability
 									Mandatory Params:
@@ -138,6 +141,7 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 
 	/*  Aleatory Cumulative Fusion, Epistemic Cumulative Fusion, Weighted Fusion, Consenses and Compromise Fusion, Proportional Fusion */
 	fusionOperator := DEFAULT_FUSION_OPERATOR
+	fusionWeightEgo := .5
 	paramFusionOperator, exists := params["FUSION_OPERATOR"]
 	if exists {
 		switch paramFusionOperator {
@@ -151,6 +155,16 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 			fusionOperator = trustmodelstructure.ConsensusAndCompromiseFusion
 		case "Proportional":
 			fusionOperator = trustmodelstructure.ProportionalFusion
+			paramFusionWeightEgo, exists := params["PROPORTIONAL_FUSION_WEIGHT_EGO"]
+			if exists {
+				if value, err := strconv.ParseFloat(paramFusionWeightEgo, 64); err == nil && value >= 0 && value <= 1 {
+					fusionWeightEgo = value
+				} else {
+					panic("Could not parse PROPORTIONAL_FUSION_WEIGHT_EGO")
+				}
+			} else {
+				panic("Missing value: PROPORTIONAL_FUSION_WEIGHT_EGO")
+			}
 		}
 	}
 
@@ -270,6 +284,7 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 		objects:             map[string]subjectivelogic.QueryableOpinion{},
 		staticRTL:           &RTL,
 		fusionOperator:      fusionOperator,
+		fusionWeightEgo:     fusionWeightEgo,
 		discountingOperator: discountingOperator,
 		trustDecision:       trustDecider,
 	}, nil
