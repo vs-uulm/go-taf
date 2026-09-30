@@ -102,7 +102,7 @@ OnNewVehicle spawns a new TMI upon an arriving vehicle. It has the following opt
 	FUSION_OPERATOR 		: Aleatory_Cumulative|Epistemic_Cumulative|Weighted|Consensus_Compromise|Proportional
 								Proportional
 									Mandatory Params:
-												- PROPORTIONAL_FUSION_WEIGHT_EGO (weight in [0,1] of V_ego's own opinion; the opinion via MEC gets 1-weight)
+												- PROPORTIONAL_FUSION_WEIGHT_EGO (weight in [0,1] of V_ego's own opinion on C_x_x; the opinion via V_x gets 1-weight)
 	DISCOUNTING_OPERATOR 	: Uncertainty_Favouring|Base_Rate_Sensitive|Disbelief_Favouring
 	TRUST_DECISION			: 	ProjectedProbability
 									Mandatory Params:
@@ -274,7 +274,6 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 		id:                  identifier,
 		version:             0,
 		template:            t.template,
-		objects:             map[string]subjectivelogic.QueryableOpinion{},
 		staticRTL:           &RTL,
 		fusionOperator:      fusionOperator,
 		fusionWeightEgo:     fusionWeightEgo,

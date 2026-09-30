@@ -22,9 +22,11 @@ func TestProportionalFusionWeightEgo(t *testing.T) {
 	tmi.Initialize(map[string]interface{}{})
 
 	direct, _ := subjectivelogic.NewOpinion(0.6, 0.3, 0.1, 0.5)
-	source, _ := subjectivelogic.NewOpinion(0.2, 0.5, 0.3, 0.5)
-	tmi.objects["1"] = &direct
-	tmi.sourceOpinion = &source
+	tch, _ := subjectivelogic.NewOpinion(0.7, 0.1, 0.2, 0.5)
+	ntm, _ := subjectivelogic.NewOpinion(0.2, 0.5, 0.3, 0.5)
+	tmi.mbdOpinion = &direct
+	tmi.tchOpinion = &tch
+	tmi.ntmOpinion = &ntm
 	tmi.updateValues()
 
 	results, err := tlee.SpawnNewTLEE(slog.Default()).RunTLEE(tmi.ID(), tmi.Version(), tmi.Fingerprint(), tmi.Structure(), tmi.Values())
@@ -32,11 +34,12 @@ func TestProportionalFusionWeightEgo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, err := subjectivelogic.MultiEdgeTrustDisc([]subjectivelogic.Opinion{FullBelief, source, FullBelief})
+	// V_ego -> V_x -> C_x_x, discounted with the default (base rate sensitive) discounting operator
+	path, err := subjectivelogic.TrustDiscounting(&tch, &ntm)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := results[objectIdentifier("1", "1")]
+	result := results[objectIdentifier(tmi.targetVehicleID, tmi.targetVehicleID)]
 	expected := []float64{
 		0.75*direct.Belief() + 0.25*path.Belief(),
 		0.75*direct.Disbelief() + 0.25*path.Disbelief(),
