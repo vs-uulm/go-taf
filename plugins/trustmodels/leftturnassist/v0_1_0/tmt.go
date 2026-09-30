@@ -26,26 +26,19 @@ type TrustModelTemplate struct {
 }
 
 func CreateTrustModelTemplate(name string, version string) core.TrustModelTemplate {
-
-	//Extract list of used trust sources from TrustSourceQuantifiers
-	tsqs, _ := createTrustSourceQuantifiers(nil)
-	evidenceMap := make(map[core.EvidenceType]bool)
-	for _, quantifier := range tsqs {
-		for _, evidence := range quantifier.Evidence {
-			evidenceMap[evidence] = true
-		}
-	}
-	evidenceTypes := make([]core.EvidenceType, len(evidenceMap))
-	i := 0
-	for k := range evidenceMap {
-		evidenceTypes[i] = k
-		i++
-	}
-
 	return TrustModelTemplate{
-		name:          name,
-		version:       version,
-		evidenceTypes: evidenceTypes,
+		name:    name,
+		version: version,
+		evidenceTypes: []core.EvidenceType{
+			core.MBD_MISBEHAVIOR_REPORT,
+			core.TCH_SECURE_BOOT,
+			core.TCH_SECURE_OTA,
+			core.TCH_ACCESS_CONTROL,
+			core.TCH_APPLICATION_ISOLATION,
+			core.TCH_CONTROL_FLOW_INTEGRITY,
+			core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION,
+			core.NTM_REMOTE_OPINION,
+		},
 	}
 }
 
