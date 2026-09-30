@@ -198,7 +198,7 @@ func (worker *Worker) executeTDE(fullTmiId string, tmi core.TrustModelInstance, 
 			worker.logger.Error("Could not find RTL in trust model instance for proposition "+proposition, "TMI ID", fullTmiId)
 			trustDecisions[proposition] = core.UNDECIDABLE //If no RTL is found, we set trust decision to UNDECIDABLE as default
 		} else {
-			tmi.Decide(proposition, atlOpinion, rtlOpinion)
+			trustDecisions[proposition] = tmi.Decide(proposition, atlOpinion, rtlOpinion)
 		}
 		projectedProbabilities[proposition] = trustdecision.ProjectProbability(atlOpinion)
 	}
