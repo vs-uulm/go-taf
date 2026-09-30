@@ -68,7 +68,7 @@ func (t TrustModelTemplate) Spawn(params map[string]string, context core.TafCont
 }
 
 func (t TrustModelTemplate) Description() string {
-	return "IMA Trust Model, standalone variant. This trust model supports configurable exponentially weighted averaging of ATOs from trust source MBD."
+	return "Left-turn Assist Model."
 }
 
 func (t TrustModelTemplate) Type() core.TrustModelTemplateType {
