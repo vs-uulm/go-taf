@@ -168,22 +168,13 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 		}
 	}
 
-	//ProjectedProbability as default
-	rtlPP := .5 //TODO: default?
-	paramTrustDeciderRTL, exists := params["TRUST_DECISION_RTL_PP"]
-	if exists {
-		if value, err := strconv.ParseFloat(paramTrustDeciderRTL, 64); err == nil {
-			if err == nil {
-				rtlPP = value
-			}
-		}
-	}
+	//default func: ProjectedProbability with .5
 	trustDecider := func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
 		if atl.Uncertainty() == 1 {
 			return core.UNDECIDABLE
 		} else {
 			var probabilisticAtl = trustdecision.ProjectProbability(atl)
-			if probabilisticAtl > rtlPP {
+			if probabilisticAtl > 0.5 {
 				return core.TRUSTWORTHY
 			} else {
 				return core.NOT_TRUSTWORTHY
@@ -194,24 +185,54 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 	paramTrustDecider, exists := params["TRUST_DECISION"]
 	if exists {
 		switch paramTrustDecider {
-		case "Uncertainty":
-			m := .1 //TODO: default?
-			paramTrustDeciderM, exists := params["TRUST_DECISION_M"]
+		case "ProjectedProbability":
+			rtlPP := .5
+			paramTrustDeciderRTL, exists := params["TRUST_DECISION_RTL_PP"]
 			if exists {
-				if value, err := strconv.ParseFloat(paramTrustDeciderM, 64); err == nil {
-					if err == nil {
-						m = value
+				if value, err := strconv.ParseFloat(paramTrustDeciderRTL, 64); err == nil {
+					rtlPP = value
+				} else {
+					panic("Could not parse TRUST_DECISION_RTL_PP")
+				}
+			} else {
+				panic("Missing value: TRUST_DECISION_RTL_PP")
+			}
+
+			//default func: ProjectedProbability with .5
+			trustDecider = func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
+				if atl.Uncertainty() == 1 {
+					return core.UNDECIDABLE
+				} else {
+					var probabilisticAtl = trustdecision.ProjectProbability(atl)
+					if probabilisticAtl > rtlPP {
+						return core.TRUSTWORTHY
+					} else {
+						return core.NOT_TRUSTWORTHY
 					}
 				}
 			}
-			delta := .1 //TODO: default?
+		case "Uncertainty":
+			m := .1
+			paramTrustDeciderM, exists := params["TRUST_DECISION_M"]
+			if exists {
+				if value, err := strconv.ParseFloat(paramTrustDeciderM, 64); err == nil {
+					m = value
+				} else {
+					panic("Could not parse TRUST_DECISION_M")
+				}
+			} else {
+				panic("Missing value: TRUST_DECISION_M") // TODO: add to others
+			}
+			delta := .1
 			paramTrustDeciderDelta, exists := params["TRUST_DECISION_DELTA"]
 			if exists {
 				if value, err := strconv.ParseFloat(paramTrustDeciderDelta, 64); err == nil {
-					if err == nil {
-						delta = value
-					}
+					delta = value
+				} else {
+					panic("Could not parse TRUST_DECISION_DELTA")
 				}
+			} else {
+				panic("Missing value: TRUST_DECISION_DELTA") // TODO: add to others
 			}
 			trustDecider = func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
 				if atl.Uncertainty() <= m && math.Abs(atl.Belief()-atl.Disbelief()) <= delta {
@@ -221,14 +242,16 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 				}
 			}
 		case "Belief":
-			k := .5 //TODO: default?
+			k := .5
 			paramTrustDeciderDelta, exists := params["TRUST_DECISION_K"]
 			if exists {
 				if value, err := strconv.ParseFloat(paramTrustDeciderDelta, 64); err == nil {
-					if err == nil {
-						k = value
-					}
+					k = value
+				} else {
+					panic("Could not parse TRUST_DECISION_K")
 				}
+			} else {
+				panic("Missing value: TRUST_DECISION_K") // TODO: add to others
 			}
 			trustDecider = func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
 				if atl.Belief() >= k {
