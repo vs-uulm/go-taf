@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -74,7 +75,7 @@ func (s *Webserver) Run() {
 	})
 
 	s.router.Use(gin.Recovery())
-	s.router.StaticFS("/ui", http.FS(frontendDir))
+	s.router.GET("/ui/*filepath", frontendHandler(frontendDir))
 	s.router.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/ui")
 	})
@@ -166,6 +167,30 @@ func (s *Webserver) SetManagers(managers manager.TafManagers) {
 			Name:          tmt.TemplateName(),
 			Version:       tmt.Version(),
 			EvidenceTypes: evidence,
+		}
+	}
+}
+
+/*
+frontendHandler serves the files of the frontend. As the frontend uses HTML5 history mode for its routes (e.g., /ui/tmis/),
+all paths that do not match a file are answered with index.html, so that the frontend router can resolve them (e.g., when
+reloading the page). Missing assets still result in a 404.
+*/
+func frontendHandler(frontendDir fs.FS) gin.HandlerFunc {
+	index, err := fs.ReadFile(frontendDir, "index.html")
+	if err != nil {
+		panic(err)
+	}
+	fileServer := http.StripPrefix("/ui", http.FileServer(http.FS(frontendDir)))
+
+	return func(c *gin.Context) {
+		path := strings.TrimPrefix(c.Param("filepath"), "/")
+		if info, err := fs.Stat(frontendDir, path); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(c.Writer, c.Request)
+		} else if strings.HasPrefix(path, "assets/") {
+			c.Status(http.StatusNotFound)
+		} else {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", index)
 		}
 	}
 }
