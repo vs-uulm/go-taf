@@ -16,7 +16,7 @@ var FullUncertainty, _ = subjectivelogic.NewOpinion(0, 0, 1, 0.5)
 var RTL, _ = subjectivelogic.NewOpinion(1, 0, 0, 0.5)
 
 var DEFAULT_FUSION_OPERATOR = trustmodelstructure.CumulativeFusion
-var DEFAULT_DISCOUNTING_OPERATOR = trustmodelstructure.OppositeBeliefDiscount
+var DEFAULT_DISCOUNTING_OPERATOR = trustmodelstructure.BaseRateSensitiveDiscount
 
 type TrustModelTemplate struct {
 	name          string
