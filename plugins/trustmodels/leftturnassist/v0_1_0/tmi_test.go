@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
+	"github.com/vs-uulm/go-taf/pkg/core"
 	"github.com/vs-uulm/go-taf/pkg/tlee"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
 )
 
 func TestProportionalFusionWeightEgo(t *testing.T) {
@@ -61,4 +63,23 @@ func TestProportionalFusionWeightEgoMissing(t *testing.T) {
 	}()
 	spawner := NewDynamicTrustModelTemplateSpawner(TrustModelTemplate{}, map[string]string{"FUSION_OPERATOR": "Proportional"})
 	spawner.OnNewVehicle("1", nil)
+}
+
+func TestInitializeKeepsTargetVehicleID(t *testing.T) {
+	spawner := NewDynamicTrustModelTemplateSpawner(TrustModelTemplate{}, nil)
+	instance, err := spawner.OnNewVehicle("1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmi := instance.(*TrustModelInstance)
+	tmi.Initialize(map[string]interface{}{"SourceId": "42"})
+
+	if _, exists := tmi.Values()[objectIdentifier("42", "42")]; !exists {
+		t.Fatalf("expected scope %s, got %v", objectIdentifier("42", "42"), tmi.Values())
+	}
+
+	opinion, _ := subjectivelogic.NewOpinion(0.7, 0.1, 0.2, 0.5)
+	if !tmi.Update(trustmodelupdate.CreateAtomicTrustOpinionUpdate(&opinion, vehicleIdentifier("ego"), vehicleIdentifier("42"), core.TCH)) {
+		t.Fatal("expected update for target vehicle to be applied")
+	}
 }

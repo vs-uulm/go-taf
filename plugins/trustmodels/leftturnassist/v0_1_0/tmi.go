@@ -193,7 +193,6 @@ func (e *TrustModelInstance) Initialize(params map[string]interface{}) {
 	e.tchOpinion = &FullUncertainty
 	e.ntmOpinion = &FullUncertainty
 	e.mbdOpinion = &FullUncertainty
-	e.targetVehicleID = ""
 
 	e.updateStructure()
 	e.updateFingerprint()
