@@ -3,6 +3,7 @@ package leftturnassist_v0_1_0
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
@@ -29,8 +30,7 @@ func CreateTrustModelTemplate(name string, version string) core.TrustModelTempla
 	return TrustModelTemplate{
 		name:    name,
 		version: version,
-		evidenceTypes: []core.EvidenceType{
-			core.MBD_MISBEHAVIOR_REPORT,
+		evidenceTypes: append(slices.Clone(mbdEvidence),
 			core.TCH_SECURE_BOOT,
 			core.TCH_SECURE_OTA,
 			core.TCH_ACCESS_CONTROL,
@@ -38,7 +38,7 @@ func CreateTrustModelTemplate(name string, version string) core.TrustModelTempla
 			core.TCH_CONTROL_FLOW_INTEGRITY,
 			core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION,
 			core.NTM_REMOTE_OPINION,
-		},
+		),
 	}
 }
 
