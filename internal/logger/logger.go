@@ -28,7 +28,7 @@ func CreateMainLogger(configuration config.Log) *slog.Logger {
 		return logger
 	case JSON:
 		handlerOpts := &slog.HandlerOptions{
-			Level: slog.LevelDebug,
+			Level: slogLevel(configuration.LogLevel),
 		}
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, handlerOpts))
 		slog.SetDefault(logger)
@@ -37,11 +37,31 @@ func CreateMainLogger(configuration config.Log) *slog.Logger {
 		fallthrough
 	default:
 		handlerOpts := &slog.HandlerOptions{
-			Level: slog.LevelDebug,
+			Level: slogLevel(configuration.LogLevel),
 		}
 		logger := slog.New(slog.NewTextHandler(os.Stderr, handlerOpts))
 		slog.SetDefault(logger)
 		return logger
+	}
+}
+
+/*
+slogLevel maps the configured pterm log level to the minimum slog level to be logged by the PLAIN and JSON styles, so that
+they filter like the PRETTY style: Trace and Debug log everything, Info, Warn, and Error log that level and above, and
+Fatal, Print, and Disabled log none of the levels used by the TAF.
+*/
+func slogLevel(level pterm.LogLevel) slog.Level {
+	switch level {
+	case pterm.LogLevelTrace, pterm.LogLevelDebug:
+		return slog.LevelDebug
+	case pterm.LogLevelInfo:
+		return slog.LevelInfo
+	case pterm.LogLevelWarn:
+		return slog.LevelWarn
+	case pterm.LogLevelError:
+		return slog.LevelError
+	default:
+		return slog.LevelError + 1
 	}
 }
 
