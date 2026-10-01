@@ -85,8 +85,8 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 				e.incrementVersion()
 			}
 		} else if strings.HasPrefix(trustee, "C_") {
-			_, _, err := parseObjectIdentifier(trustee)
-			if err == nil {
+			source, id, err := parseObjectIdentifier(trustee)
+			if err == nil && source == e.targetVehicleID && id == e.targetVehicleID {
 				e.mbdOpinion = update.Opinion()
 				e.updateValues()
 				e.incrementVersion()
