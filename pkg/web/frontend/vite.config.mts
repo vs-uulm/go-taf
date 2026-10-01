@@ -30,13 +30,6 @@ export default defineConfig({
     // (this is the default for an outDir inside the project root, but stays in effect if outDir is ever moved)
     emptyOutDir: true,
   },
-  css: {
-    // use Sass' modern API instead of its deprecated legacy JS API
-    preprocessorOptions: {
-      sass: { api: 'modern-compiler' },
-      scss: { api: 'modern-compiler' },
-    },
-  },
   define: { 'process.env': {} },
   resolve: {
     alias: {

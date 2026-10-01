@@ -1,8 +1,10 @@
 package web
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -41,5 +43,22 @@ func TestFrontendHandler(t *testing.T) {
 				t.Fatalf("expected %d containing %q, got %d: %q", test.status, test.body, recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+}
+
+// TestFrontendFullyEmbedded checks that every file of the built frontend is embedded, as go:embed skips files starting
+// with "_" or "." unless the all: prefix is used.
+func TestFrontendFullyEmbedded(t *testing.T) {
+	err := filepath.WalkDir("frontend/dist", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		if _, err := fs.Stat(webFrontend, filepath.ToSlash(path)); err != nil {
+			t.Errorf("%s is not embedded: %v", path, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

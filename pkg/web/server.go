@@ -17,7 +17,9 @@ import (
 	"github.com/vs-uulm/go-taf/pkg/manager"
 )
 
-//go:embed frontend/dist
+// The all: prefix also embeds files starting with "_" or ".", such as chunks named after frontend routes (e.g., ":id").
+//
+//go:embed all:frontend/dist
 var webFrontend embed.FS
 
 //https://www.jetbrains.com/guide/go/tutorials/rest_api_series/gin/

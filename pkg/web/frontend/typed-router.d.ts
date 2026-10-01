@@ -20,7 +20,7 @@ declare module 'vue-router/auto-routes' {
   export interface RouteNamedMap {
     '/sessions/': RouteRecordInfo<'/sessions/', '/sessions', Record<never, never>, Record<never, never>>,
     '/tmis/': RouteRecordInfo<'/tmis/', '/tmis', Record<never, never>, Record<never, never>>,
-    '/tmis/:client/:sessionID/:template/:id/': RouteRecordInfo<'/tmis/:client/:sessionID/:template/:id/', '/tmis/:client/:sessionID/:template/:id', Record<never, never>, Record<never, never>>,
-    '/tmis/:client/:sessionID/:template/:id/:version/': RouteRecordInfo<'/tmis/:client/:sessionID/:template/:id/:version/', '/tmis/:client/:sessionID/:template/:id/:version', Record<never, never>, Record<never, never>>,
+    '/tmis/[client]/[sessionID]/[template]/[id]/': RouteRecordInfo<'/tmis/[client]/[sessionID]/[template]/[id]/', '/tmis/:client/:sessionID/:template/:id', { client: ParamValue<true>, sessionID: ParamValue<true>, template: ParamValue<true>, id: ParamValue<true> }, { client: ParamValue<false>, sessionID: ParamValue<false>, template: ParamValue<false>, id: ParamValue<false> }>,
+    '/tmis/[client]/[sessionID]/[template]/[id]/[version]/': RouteRecordInfo<'/tmis/[client]/[sessionID]/[template]/[id]/[version]/', '/tmis/:client/:sessionID/:template/:id/:version', { client: ParamValue<true>, sessionID: ParamValue<true>, template: ParamValue<true>, id: ParamValue<true>, version: ParamValue<true> }, { client: ParamValue<false>, sessionID: ParamValue<false>, template: ParamValue<false>, id: ParamValue<false>, version: ParamValue<false> }>,
   }
 }
