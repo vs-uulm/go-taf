@@ -2,7 +2,6 @@
 import Components from 'unplugin-vue-components/vite'
 import Vue from '@vitejs/plugin-vue'
 import Vuetify, { transformAssetUrls } from 'vite-plugin-vuetify'
-import ViteFonts from 'unplugin-fonts/vite'
 import VueRouter from 'unplugin-vue-router/vite'
 
 // Utilities
@@ -25,14 +24,6 @@ export default defineConfig({
       },
     }),
     Components(),
-    ViteFonts({
-      google: {
-        families: [ {
-          name: 'Roboto',
-          styles: 'wght@100;300;400;500;700;900',
-        }],
-      },
-    }),
   ],
   build: {
     // remove the results of previous builds from dist, as dist is committed and embedded into the TAF binary
