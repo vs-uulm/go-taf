@@ -33,6 +33,10 @@ const (
 	   NTM
 	*/
 	NTM
+	/*
+	   V2X: opinions contained in V2X messages (e.g., CAMs), which reach the TMIs directly instead of via a trust source handler
+	*/
+	V2X
 )
 
 const (
@@ -61,6 +65,7 @@ const (
 	TCH_CONTROL_FLOW_INTEGRITY
 	TCH_CONFIGURATION_INTEGRITY_VERIFICATION
 	NTM_REMOTE_OPINION
+	V2X_POSITION_OPINION
 )
 
 func (e EvidenceType) String() string {
@@ -115,6 +120,8 @@ func (e EvidenceType) String() string {
 		return "CONFIGURATION_INTEGRITY_VERIFICATION"
 	case NTM_REMOTE_OPINION:
 		return "REMOTE_OPINION"
+	case V2X_POSITION_OPINION:
+		return "POSITION_OPINION"
 	default:
 		return "UNKNOWN_EVIDENCE"
 	}
@@ -132,6 +139,8 @@ func (s TrustSource) String() string {
 		return "TCH"
 	case NTM:
 		return "NTM"
+	case V2X:
+		return "V2X"
 	default:
 		return "UNKNOWN_SOURCE"
 	}
@@ -189,6 +198,8 @@ func (e EvidenceType) Source() TrustSource {
 		return TCH
 	case NTM_REMOTE_OPINION:
 		return NTM
+	case V2X_POSITION_OPINION:
+		return V2X
 	default:
 		return NONE
 	}
@@ -261,6 +272,13 @@ func EvidenceTypeBySourceAndName(ts TrustSource, name string) EvidenceType {
 		switch {
 		case strings.ToUpper(name) == NTM_REMOTE_OPINION.String():
 			return NTM_REMOTE_OPINION
+		default:
+			return UNKNOWN
+		}
+	case V2X:
+		switch {
+		case strings.ToUpper(name) == V2X_POSITION_OPINION.String():
+			return V2X_POSITION_OPINION
 		default:
 			return UNKNOWN
 		}
