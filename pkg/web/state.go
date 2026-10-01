@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -484,6 +485,7 @@ const MAX_VERSIONS_PAGE_SIZE = 1000
 /*
 getTMIVersions returns the versions of a TMI (state, updates, and ATLs per version) in descending order, page by page.
 The optional query parameter before only returns versions older than the given version, limit sets the page size.
+The optional query parameter search only returns versions whose number or updates contain the given term (ignoring case).
 */
 func (s *State) getTMIVersions(ctx *gin.Context) {
 	tmi, exists := s.tmi(ctx)
@@ -513,6 +515,10 @@ func (s *State) getTMIVersions(ctx *gin.Context) {
 
 	versions := slices.Sorted(maps.Keys(tmi.States))
 	slices.Reverse(versions)
+	total := len(versions)
+	if search, exists := ctx.GetQuery("search"); exists && search != "" {
+		versions = slices.DeleteFunc(versions, func(version int) bool { return !versionMatches(tmi, version, search) })
+	}
 	start, found := slices.BinarySearchFunc(versions, before, func(version int, target int) int { return target - version })
 	if found {
 		start++ // before is exclusive
@@ -534,9 +540,29 @@ func (s *State) getTMIVersions(ctx *gin.Context) {
 		"active":        tmi.IsActive,
 		"template":      tmi.Template,
 		"latestVersion": tmi.LatestVersion,
-		"total":         len(versions),
+		"total":         total,
+		"matches":       len(versions),
 		"versions":      items,
 	})
+}
+
+/*
+versionMatches checks whether the number or the updates of a TMI version contain the search term, ignoring case. As
+updates are stored as compact JSON, but shown with indentation, the term is also matched with its whitespace removed.
+*/
+func versionMatches(tmi tmiMetaState, version int, search string) bool {
+	term := strings.ToLower(search)
+	if strings.Contains(strconv.Itoa(version), term) {
+		return true
+	}
+	compactTerm := strings.Join(strings.Fields(term), "")
+	for _, update := range tmi.Update[version] {
+		lower := strings.ToLower(string(update))
+		if strings.Contains(lower, term) || (compactTerm != "" && strings.Contains(lower, compactTerm)) {
+			return true
+		}
+	}
+	return false
 }
 
 func versionResponse(tmi tmiMetaState, version int) gin.H {

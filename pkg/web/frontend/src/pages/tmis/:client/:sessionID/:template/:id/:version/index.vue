@@ -53,6 +53,11 @@ async function refresh() {
     route.params.id as string,
     route.params.version as string
   );
+  // only keep the shown version, instead of every version selected with the slider
+  store.retainTrustModelInstanceVersions(
+    `//${route.params.client}/${route.params.sessionID}/${route.params.template}/${route.params.id}`,
+    [Number(route.params.version)]
+  );
 }
 
 const trustModelInstance = useWatchedTrustModelInstance(route, refresh);

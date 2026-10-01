@@ -45,11 +45,14 @@ const props = defineProps<{
   sortBy: SortItem[],
   syncToQuery: boolean,
   defaults?: { [key: string]: string },
+  // if set, the search term is not applied to the items, but emitted via update:search to be resolved by the parent
+  remoteSearch?: boolean,
 }>();
 
 const emit = defineEmits<{
   (event: 'update:modelValue', payload: any[]): void,
-  (event: 'update:sortBy', payload: SortItem[]): void
+  (event: 'update:sortBy', payload: SortItem[]): void,
+  (event: 'update:search', payload: string): void
 }>();
 
 type Filter = {
@@ -158,7 +161,9 @@ function update(syncToQuery: boolean=true) {
 
   let items = props.items;
 
-  if (search.value?.length) {
+  if (props.remoteSearch) {
+    emit('update:search', search.value || '');
+  } else if (search.value?.length) {
     const term = search.value.toLocaleLowerCase();
     items = items.filter((item) => props.columns.some((e) => {
         if (!e.filterable) {

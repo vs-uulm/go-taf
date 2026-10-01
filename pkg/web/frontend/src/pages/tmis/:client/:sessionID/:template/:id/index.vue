@@ -1,8 +1,9 @@
 <template>
   <Teleport to="#toolbar">
-    <faceted-search v-model="filteredItems" :columns="headers" :items="items" sync-to-query v-model:sort-by="sortBy" :defaults="{ sort: '-version' }" />
+    <faceted-search v-model="filteredItems" :columns="headers" :items="items" sync-to-query v-model:sort-by="sortBy" :defaults="{ sort: '-version' }" remote-search @update:search="onSearch" />
 
-    <v-chip size="small" class="mx-1 align-self-center" label :title="`The latest ${items.length} versions are shown`">{{ items.length }} versions</v-chip>
+    <v-chip v-if="searchTerm" size="small" class="mx-1 align-self-center" label :title="`${items.length} of ${matches} versions matching the search are loaded`">{{ items.length }} / {{ matches }} matching versions</v-chip>
+    <v-chip v-else size="small" class="mx-1 align-self-center" label :title="`The latest ${items.length} versions are shown`">{{ items.length }} versions</v-chip>
     <v-btn icon :title="`Load ${PAGE_SIZE} older versions`" size="small" @click="loadOlder" :disabled="!hasOlder" variant="text">
       <v-icon icon="mdi-history" />
     </v-btn>
@@ -148,8 +149,13 @@ const headers: Column[] = [{
 
 // versions are loaded page by page, newly arriving versions are added while keeping at most historyLimit versions
 const PAGE_SIZE = 100;
-const historyLimit = ref(PAGE_SIZE);
+const historyLimit = ref<number | undefined>(PAGE_SIZE);
 const hasOlder = ref(false);
+// the search term is resolved by the server, so that it covers all versions instead of only the loaded ones
+const searchTerm = ref('');
+const matches = ref(0);
+// incremented with each refresh, so that responses of outdated searches are discarded
+let generation = 0;
 
 const trustModelInstance = useWatchedTrustModelInstance(route, refresh, () => historyLimit.value);
 
@@ -181,15 +187,21 @@ function onResize() {
 }
 
 async function fetchVersions(before?: number): Promise<boolean> {
+  const current = generation;
   try {
-    const fetched = await store.fetchTrustModelInstanceVersions(
+    const { fetched, matches: total } = await store.fetchTrustModelInstanceVersions(
       route.params.client as string,
       route.params.sessionID as string,
       route.params.template as string,
       route.params.id as string,
       PAGE_SIZE,
       before,
+      searchTerm.value,
+      () => current === generation,
     );
+    if (current === generation) {
+      matches.value = total;
+    }
     return fetched === PAGE_SIZE;
   } catch {
     router.push('/');
@@ -198,7 +210,11 @@ async function fetchVersions(before?: number): Promise<boolean> {
 }
 
 async function refresh() {
-  historyLimit.value = PAGE_SIZE;
+  generation++;
+  // while searching, the matching versions of the whole history are shown and no new versions are added live, as they
+  // may not match the search
+  historyLimit.value = searchTerm.value ? undefined : PAGE_SIZE;
+  store.clearTrustModelInstanceHistory(`//${route.params.client}/${route.params.sessionID}/${route.params.template}/${route.params.id}`);
   hasOlder.value = await fetchVersions();
 }
 
@@ -207,7 +223,21 @@ async function loadOlder() {
   if (!versions.length) {
     return;
   }
-  historyLimit.value = versions.length + PAGE_SIZE;
+  if (historyLimit.value !== undefined) {
+    historyLimit.value = versions.length + PAGE_SIZE;
+  }
   hasOlder.value = await fetchVersions(Math.min(...versions));
+}
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+function onSearch(term: string) {
+  clearTimeout(searchTimer);
+  if (term === searchTerm.value) {
+    return;
+  }
+  searchTimer = setTimeout(() => {
+    searchTerm.value = term;
+    refresh();
+  }, 300);
 }
 </script>

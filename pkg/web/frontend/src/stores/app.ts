@@ -103,9 +103,41 @@ export const useAppStore = defineStore('app', {
       return (this.watchedTrustModelInstances[key] || 0) > 0;
     },
 
-    setLiveHistoryLimit(key: string, limit: number) {
+    /*
+      setLiveHistoryLimit makes newly arriving versions of a watched TMI be added, keeping at most limit versions;
+      undefined stops adding them.
+    */
+    setLiveHistoryLimit(key: string, limit: number | undefined) {
+      if (limit === undefined) {
+        delete this.liveHistoryLimits[key];
+        return;
+      }
       this.liveHistoryLimits[key] = limit;
       this.trimHistory(key);
+    },
+
+    clearTrustModelInstanceHistory(key: string) {
+      const tmi = this.trustModelInstances[key];
+      if (tmi) {
+        tmi.states = {};
+        tmi.updates = {};
+        tmi.atls = {};
+      }
+    },
+
+    /*
+      retainTrustModelInstanceVersions removes all versions of a TMI except the given ones.
+    */
+    retainTrustModelInstanceVersions(key: string, versions: number[]) {
+      const tmi = this.trustModelInstances[key];
+      if (!tmi) {
+        return;
+      }
+      for (const version of Object.keys(tmi.states).map(Number).filter(v => !versions.includes(v))) {
+        delete tmi.states[version];
+        delete tmi.updates[version];
+        delete tmi.atls[version];
+      }
     },
 
     isLive(key: string): boolean {
@@ -388,12 +420,22 @@ export const useAppStore = defineStore('app', {
 
     /*
       fetchTrustModelInstanceVersions fetches a page of versions (state, updates, and ATLs) of a TMI in descending order,
-      optionally only versions older than before. Returns the amount of fetched versions.
+      optionally only versions older than before and only versions matching search. Returns the amount of fetched
+      versions and the total amount of matching versions. The result is discarded if isCurrent returns false, e.g.,
+      because a newer search has been started in the meantime.
     */
-    async fetchTrustModelInstanceVersions(client: string, sessionID: string, template: string, id: string, limit: number, before?: number): Promise<number> {
-      const res = await axios.get(`/api/tmis/${client}/${sessionID}/${template}/${id}/versions`, {
-        params: before === undefined ? { limit } : { limit, before }
-      });
+    async fetchTrustModelInstanceVersions(client: string, sessionID: string, template: string, id: string, limit: number, before?: number, search?: string, isCurrent: () => boolean = () => true): Promise<{ fetched: number, matches: number }> {
+      const params: {[key: string]: string | number} = { limit };
+      if (before !== undefined) {
+        params.before = before;
+      }
+      if (search) {
+        params.search = search;
+      }
+      const res = await axios.get(`/api/tmis/${client}/${sessionID}/${template}/${id}/versions`, { params });
+      if (!isCurrent()) {
+        return { fetched: 0, matches: 0 };
+      }
       const key = res.data.fullTMI as string;
       const parts = key.split('/');
 
@@ -421,7 +463,7 @@ export const useAppStore = defineStore('app', {
           tmi.atls[item.version] = markRaw(item.atls);
         }
       }
-      return res.data.versions.length;
+      return { fetched: res.data.versions.length, matches: res.data.matches };
     },
 
     async fetchTrustModelInstances() {
@@ -483,9 +525,10 @@ function rawValues<T extends object>(obj: {[key: string]: T}): {[key: string]: T
 /*
 useWatchedTrustModelInstance marks the TMI of the current route as watched while the calling component is mounted, so
 that its states, updates, and ATLs are kept in the store, and calls refresh whenever the data needs to be (re-)fetched.
-If liveHistoryLimit is given, newly arriving versions are added to the store, keeping at most that many versions.
+If liveHistoryLimit is given, newly arriving versions are added to the store, keeping at most that many versions
+(none while it returns undefined).
 */
-export function useWatchedTrustModelInstance(route: RouteLocationNormalizedLoaded, refresh: () => unknown, liveHistoryLimit?: () => number) {
+export function useWatchedTrustModelInstance(route: RouteLocationNormalizedLoaded, refresh: () => unknown, liveHistoryLimit?: () => number | undefined) {
   const store = useAppStore();
   // the TMI currently registered as watched; tracked separately from the route, as the route already points to the
   // next page when this component is unmounted
