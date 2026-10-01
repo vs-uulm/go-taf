@@ -51,7 +51,7 @@ import AlertDialog from './components/AlertDialog.vue';
 
 const dialog = ref<InstanceType<typeof AlertDialog> | null>(null);
 
-let connectionState = ref('');
+const connectionState = ref('');
 let hasConnected = false;
 
 function dialogCallHelper(fn: 'alert' | 'confirm' | 'prompt' | 'select', title: string, message: string = '', options: AlertOptions = {}): Promise<any> {

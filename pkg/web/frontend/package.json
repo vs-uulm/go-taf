@@ -5,7 +5,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --fix --ignore-path .gitignore"
+    "lint": "eslint . --fix"
   },
   "dependencies": {
     "@fontsource/roboto": "^5.3.0",
@@ -23,17 +23,13 @@
     "vuetify": "^4.2.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/color-hash": "^2.0.0",
     "@types/node": "^20.14.10",
     "@vitejs/plugin-vue": "^6.0.9",
-    "@vue/eslint-config-typescript": "^13.0.0",
-    "eslint": "^8.57.0",
-    "eslint-config-standard": "^17.1.0",
-    "eslint-plugin-import": "^2.29.1",
-    "eslint-plugin-n": "^16.6.2",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^6.4.0",
-    "eslint-plugin-vue": "^9.27.0",
+    "@vue/eslint-config-typescript": "^14.9.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-vue": "^10.11.1",
     "sass": "^1.105.1",
     "typescript": "^5.4.2",
     "unplugin-vue-components": "^32.1.0",
