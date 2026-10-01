@@ -26,14 +26,15 @@
       </v-chip>
     </template>
     <template #[`item.updates`]="{ item }">
-      <ul class="mt-1">
-        <li v-for="(update, i) in item.updates" :key="i"><pre>{{ update }}</pre></li>
+      <!-- spacing is set explicitly, as Vuetify 4 no longer resets the browser's default margins and paddings -->
+      <ul class="mt-1 pa-0">
+        <li v-for="(update, i) in item.updates" :key="i"><pre class="ma-0">{{ update }}</pre></li>
       </ul>
     </template>
     <template #[`item.atls`]="{ item }">
       <v-card variant="outlined" class="mx-2 my-1" v-for="(_, scope) in item.atls?.SlResults" :key="scope">
         <template #title>
-          <div class="text-overline mt-n2">ATL Scope: <code>{{ scope }}</code></div>
+          <div class="text-label-medium">ATL Scope: <code>{{ scope }}</code></div>
         </template>
 
         <v-table density="compact" class="mt-n4">
@@ -58,7 +59,7 @@
     <template #[`item.state`]="{ item }">
       <v-card variant="outlined" class="mx-2 my-1" v-for="(rows, scope) in item.state.Values" :key="scope">
         <template #title>
-          <div class="text-overline mt-n2">Scope: <code>{{ scope }}</code></div>
+          <div class="text-label-medium">Scope: <code>{{ scope }}</code></div>
         </template>
 
         <v-table density="compact" class="mt-n4">

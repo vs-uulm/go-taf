@@ -1,7 +1,7 @@
 <template>
   <v-app>
     <v-toolbar density="compact" :elevation="1">
-      <span class="ml-3 text-h6">
+      <span class="ml-3 text-title-large">
         <router-link to="/" :style="`color: ${theme.global.current.value.dark ? 'white' : 'black'}; text-decoration: none`">
           <v-icon start icon="mdi-graph-outline" />
           TAF Web UI

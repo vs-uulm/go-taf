@@ -23,10 +23,10 @@
             </v-card-text>
 
             <v-card-text v-if="$options.type === 'select'" class="pt-5">
-                <p :style="$options.wrap ? 'white-space: pre-wrap;' : ''">{{ $options.description }}</p>
+                <p class="ma-0" :style="$options.wrap ? 'white-space: pre-wrap;' : ''">{{ $options.description }}</p>
                 <v-select ref="dropdown" v-model="$message" :item-title="$options.itemText" :item-value="$options.itemValue" :items="$options.items" :label="$options.label" :hint="$options.hint" :persistent-hint="!!$options.hint" :prepend-icon="$options.prependIcon || undefined" outlined autofocus @keyup.enter="agree">
                   <template v-slot:item="{ props, item }">
-                    <v-list-item v-bind="props" :base-color="item.raw.color" :subtitle="item.raw.subtitle"></v-list-item>
+                    <v-list-item v-bind="props" :base-color="item.color" :subtitle="item.subtitle"></v-list-item>
                   </template>
                 </v-select>
             </v-card-text>
