@@ -899,7 +899,7 @@ func (tam *Manager) RemoveTrustModelInstance(fullTMIid string, sessionID string)
 	} else {
 		_, _, _, tmiID := core.SplitFullTMIIdentifier(fullTMIid)
 		tam.logger.Debug("Removing TMI from Session", "Session", sessionID, "TMI", fullTMIid)
-		tam.DispatchToWorker(sess, fullTMIid, command.CreateHandleTMIDestroy(fullTMIid))
+		tam.DispatchToWorkerByFullTMIID(fullTMIid, command.CreateHandleTMIDestroy(fullTMIid))
 		tam.tmiTable.UnregisterTMI(sess.Client(), sess.ID(), sess.TrustModelTemplate().Identifier(), tmiID)
 		delete(tam.atlResults, fullTMIid)
 		tam.notifyATLRemoved(fullTMIid)
