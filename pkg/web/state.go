@@ -2,13 +2,13 @@ package web
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/internal/util"
 	"github.com/vs-uulm/go-taf/pkg/core"
@@ -22,9 +22,14 @@ This copy can then be used by the WEB UI to give read access to the recreated TA
 This includes:
   - stream of internal events sent from the TAF
   - state of TMIs
+
+The state is written by State.Handle only and read by the HTTP handlers, which run in other go-routines, so all access
+is guarded by mutex. Events are stored as JSON snapshots marshaled once upon arrival: they are immutable afterwards, so
+HTTP handlers only need to hold the lock while collecting references and can serialize their response without it.
 */
 type State struct {
-	eventLog []listener.ListenerEvent
+	mutex    sync.RWMutex
+	eventLog []json.RawMessage
 	logger   *slog.Logger
 	tmis     map[string]*tmiMetaState
 	sessions map[string]*sessionState
@@ -33,7 +38,7 @@ type State struct {
 func NewState(logger *slog.Logger) *State {
 	return &State{
 		logger:   logger,
-		eventLog: make([]listener.ListenerEvent, 0),
+		eventLog: make([]json.RawMessage, 0),
 		tmis:     make(map[string]*tmiMetaState),
 		sessions: make(map[string]*sessionState),
 	}
@@ -57,10 +62,10 @@ type tmiMetaState struct {
 	FullTMI       string
 	IsActive      bool
 	LatestVersion int
-	Update        map[int][]core.Update
-	States        map[int]tmiState
-	Template      core.TrustModelTemplate
-	ATLs          map[int]core.AtlResultSet
+	Update        map[int][]json.RawMessage // marshaled core.Update
+	States        map[int]json.RawMessage   // marshaled tmiState
+	Template      string
+	ATLs          map[int]json.RawMessage // marshaled core.AtlResultSet
 }
 
 type sessionState struct {
@@ -70,77 +75,97 @@ type sessionState struct {
 	Template string
 }
 
-type WebSocketEventType int
-
-const (
-	CONNECTED    WebSocketEventType = 0
-	DISCONNECTED WebSocketEventType = 1
-)
-
-type WebSocketEvent struct {
-	Socket *websocket.Conn
-	Type   WebSocketEventType
-}
-
-func (s *State) Handle(incomingEvents chan listener.ListenerEvent, websocketEvents chan WebSocketEvent) {
-	sockets := make([]*websocket.Conn, 0)
+/*
+Handle processes all events from the TAF and the web socket clients. Events from the TAF are applied to the state and
+forwarded to all connected web socket clients. Clients that cannot keep up are disconnected.
+*/
+func (s *State) Handle(incomingEvents *eventQueue, websocketEvents chan WebSocketEvent) {
+	clients := make(map[*webSocketClient]struct{})
 	for {
 		select {
-		case evt := <-incomingEvents:
-			s.eventLog = append(s.eventLog, evt)
-			switch event := evt.(type) {
-			case listener.ATLRemovedEvent:
-				s.logger.Info("ATLRemovedEvent")
-			case listener.ATLUpdatedEvent:
-				s.logger.Info("ATLUpdatedEvent")
-				s.handleATLUpdatedEvent(event)
-			case listener.TrustModelInstanceSpawnedEvent:
-				s.logger.Info("TrustModelInstanceSpawnedEvent")
-				s.handleTMISpawned(event)
-			case listener.TrustModelInstanceUpdatedEvent:
-				s.logger.Info("TrustModelInstanceUpdatedEvent")
-				s.handleTMIUpdated(event)
-			case listener.TrustModelInstanceDeletedEvent:
-				s.logger.Info("TrustModelInstanceDeletedEvent")
-				s.handleTMIDeleted(event)
-			case listener.SessionCreatedEvent:
-				s.logger.Info("SessionCreatedEvent")
-				s.handleSessionCreatedEvent(event)
-			case listener.SessionTorndownEvent:
-				s.logger.Info("SessionTorndownEvent")
-				s.handleSessionTorndownEvent(event)
-			default:
-				util.UNUSED(event)
-			}
+		case <-incomingEvents.signal:
+			for _, evt := range incomingEvents.drain() {
+				msg, err := s.apply(evt)
+				if err != nil {
+					s.logger.Error("could not process event", "error", err)
+					continue
+				}
 
-			msg, err := json.Marshal(evt)
-			if err != nil {
-				continue
-			}
-
-			for _, ws := range sockets {
-				if err := ws.WriteMessage(websocket.TextMessage, msg); err != nil {
-					websocketEvents <- WebSocketEvent{Type: UNREGISTER, Socket: ws}
+				for client := range clients {
+					select {
+					case client.send <- msg:
+					default:
+						s.logger.Warn("disconnecting web socket client that cannot keep up")
+						delete(clients, client)
+						close(client.send)
+						client.conn.Close()
+					}
 				}
 			}
 
 		case evt := <-websocketEvents:
 			switch evt.Type {
 			case CONNECTED:
-				sockets = append(sockets, evt.Socket)
+				clients[evt.Client] = struct{}{}
 			case DISCONNECTED:
-				for i, ws := range sockets {
-					if ws == evt.Socket {
-						sockets = append(sockets[:i], sockets[i+1:]...)
-						break
-					}
+				if _, exists := clients[evt.Client]; exists {
+					delete(clients, evt.Client)
+					close(evt.Client.send)
 				}
 			}
 		}
 	}
 }
 
+/*
+apply adds an event to the state and returns its JSON representation.
+Events (and the TMI structures, values, and updates they contain) are marshaled here, i.e., in the web server
+go-routine and not upon emission. This relies on TMIs replacing their structure and values upon changes instead of
+modifying the previously returned instances.
+*/
+func (s *State) apply(evt listener.ListenerEvent) (json.RawMessage, error) {
+	msg, err := json.Marshal(evt)
+	if err != nil {
+		return nil, err
+	}
+
+	switch event := evt.(type) {
+	case listener.ATLRemovedEvent:
+		s.logger.Debug("ATLRemovedEvent")
+	case listener.ATLUpdatedEvent:
+		s.logger.Debug("ATLUpdatedEvent", "atls", event.NewATLs)
+		err = s.handleATLUpdatedEvent(event)
+	case listener.TrustModelInstanceSpawnedEvent:
+		s.logger.Debug("TrustModelInstanceSpawnedEvent")
+		err = s.handleTMISpawned(event)
+	case listener.TrustModelInstanceUpdatedEvent:
+		s.logger.Debug("TrustModelInstanceUpdatedEvent")
+		err = s.handleTMIUpdated(event)
+	case listener.TrustModelInstanceDeletedEvent:
+		s.logger.Debug("TrustModelInstanceDeletedEvent")
+		s.handleTMIDeleted(event)
+	case listener.SessionCreatedEvent:
+		s.logger.Debug("SessionCreatedEvent")
+		s.handleSessionCreatedEvent(event)
+	case listener.SessionTorndownEvent:
+		s.logger.Debug("SessionTorndownEvent")
+		s.handleSessionTorndownEvent(event)
+	default:
+		util.UNUSED(event)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	s.mutex.Lock()
+	s.eventLog = append(s.eventLog, msg)
+	s.mutex.Unlock()
+	return msg, nil
+}
+
 func (s *State) handleSessionCreatedEvent(event listener.SessionCreatedEvent) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.sessions[event.SessionID] = &sessionState{
 		Client:   event.ClientID,
 		IsActive: true,
@@ -150,26 +175,46 @@ func (s *State) handleSessionCreatedEvent(event listener.SessionCreatedEvent) {
 }
 
 func (s *State) handleSessionTorndownEvent(event listener.SessionTorndownEvent) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	if _, exists := s.sessions[event.SessionID]; exists {
 		s.sessions[event.SessionID].IsActive = false
 	}
 }
 
-func (s *State) handleATLUpdatedEvent(event listener.ATLUpdatedEvent) {
-	fullTMI := event.FullTMI
-	_, exists := s.tmis[fullTMI]
-	if !exists {
-		return
-	} else {
-		s.logger.Info(fmt.Sprintf("%+v", event.NewATLs))
+func (s *State) handleATLUpdatedEvent(event listener.ATLUpdatedEvent) error {
+	atls, err := json.Marshal(event.NewATLs)
+	if err != nil {
+		return err
 	}
-	s.tmis[fullTMI].ATLs[event.NewATLs.Version()] = event.NewATLs
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	tmi, exists := s.tmis[event.FullTMI]
+	if !exists {
+		return nil
+	}
+	tmi.ATLs[event.NewATLs.Version()] = atls
+	return nil
 }
 
-func (s *State) handleTMISpawned(event listener.TrustModelInstanceSpawnedEvent) {
-	fullTMI := event.FullTMI
+func (s *State) handleTMISpawned(event listener.TrustModelInstanceSpawnedEvent) error {
+	state, err := json.Marshal(tmiState{
+		Version:     event.Version,
+		Fingerprint: event.Fingerprint,
+		Structure:   event.Structure,
+		Values:      event.Values,
+		RTLs:        event.RTLs,
+	})
+	if err != nil {
+		return err
+	}
 
+	fullTMI := event.FullTMI
 	_, sessionID, _, _ := core.SplitFullTMIIdentifier(fullTMI)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	if _, exists := s.sessions[sessionID]; exists {
 		s.sessions[sessionID].TMIs = append(s.sessions[sessionID].TMIs, fullTMI)
 	}
@@ -177,60 +222,95 @@ func (s *State) handleTMISpawned(event listener.TrustModelInstanceSpawnedEvent) 
 	s.tmis[fullTMI] = &tmiMetaState{
 		IsActive:      true,
 		LatestVersion: 0,
-		Update:        make(map[int][]core.Update),
-		States:        make(map[int]tmiState),
-		Template:      event.Template,
+		Update:        make(map[int][]json.RawMessage),
+		States:        map[int]json.RawMessage{event.Version: state},
+		Template:      event.Template.Identifier(),
 		ID:            event.ID,
 		FullTMI:       event.FullTMI,
-		ATLs:          make(map[int]core.AtlResultSet),
+		ATLs:          make(map[int]json.RawMessage),
 	}
-	s.tmis[fullTMI].States[event.Version] = tmiState{
-		Version:     event.Version,
-		Fingerprint: event.Fingerprint,
-		Structure:   event.Structure,
-		Values:      event.Values,
-		RTLs:        event.RTLs,
-	}
-
+	return nil
 }
 
-func (s *State) handleTMIUpdated(event listener.TrustModelInstanceUpdatedEvent) {
-	fullTMI := event.FullTMI
+func (s *State) handleTMIUpdated(event listener.TrustModelInstanceUpdatedEvent) error {
+	update, err := json.Marshal(event.Update)
+	if err != nil {
+		return err
+	}
+
+	s.mutex.RLock()
+	tmi, exists := s.tmis[event.FullTMI]
+	var versionExists bool
+	if exists {
+		_, versionExists = tmi.States[event.Version]
+	}
+	s.mutex.RUnlock()
+	if !exists {
+		return nil
+	}
+
 	// If there exists already an entry for that version, this means we have received another update that yields the same
 	// version number. This means that the second update has failed to increase the version number and can be ignored.
-	_, exists := s.tmis[fullTMI].States[event.Version]
-	if exists {
-		s.tmis[fullTMI].Update[event.Version+1] = []core.Update{event.Update}
-		return
+	if versionExists {
+		s.mutex.Lock()
+		tmi.Update[event.Version+1] = []json.RawMessage{update}
+		s.mutex.Unlock()
+		return nil
 	}
-	s.tmis[fullTMI].States[event.Version] = tmiState{
+
+	state, err := json.Marshal(tmiState{
 		Version:     event.Version,
 		Fingerprint: event.Fingerprint,
 		Structure:   event.Structure,
 		Values:      event.Values,
 		RTLs:        event.RTLs,
+	})
+	if err != nil {
+		return err
 	}
-	if s.tmis[fullTMI].Update[event.Version] == nil {
-		s.tmis[fullTMI].Update[event.Version] = make([]core.Update, 0)
-	}
-	s.tmis[fullTMI].Update[event.Version] = append(s.tmis[fullTMI].Update[event.Version], event.Update)
-	s.tmis[fullTMI].LatestVersion = event.Version
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	tmi.States[event.Version] = state
+	tmi.Update[event.Version] = append(tmi.Update[event.Version], update)
+	tmi.LatestVersion = event.Version
+	return nil
 }
 
 func (s *State) handleTMIDeleted(event listener.TrustModelInstanceDeletedEvent) {
-	fullTMI := event.FullTMI
-	s.tmis[fullTMI].IsActive = false
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if tmi, exists := s.tmis[event.FullTMI]; exists {
+		tmi.IsActive = false
+	}
 }
 
 func (s *State) getSessions(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, s.sessions)
+	s.mutex.RLock()
+	sessions := make(map[string]sessionState, len(s.sessions))
+	for id, session := range s.sessions {
+		sessions[id] = *session
+	}
+	s.mutex.RUnlock()
+	ctx.JSON(http.StatusOK, sessions)
+}
+
+/*
+events returns the current event log. As the event log is append-only and its entries are immutable, the returned
+slice can be read without holding the lock.
+*/
+func (s *State) events() []json.RawMessage {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.eventLog[:len(s.eventLog):len(s.eventLog)]
 }
 
 func (s *State) getFullEventLog(ctx *gin.Context) {
-	fullLog := make([]map[int]interface{}, len(s.eventLog))
+	eventLog := s.events()
+	fullLog := make([]map[int]interface{}, len(eventLog))
 
-	logLength := len(s.eventLog)
-	for i, entry := range s.eventLog {
+	logLength := len(eventLog)
+	for i, entry := range eventLog {
 		fullLog[logLength-i-1] = map[int]interface{}{
 			i: entry,
 		}
@@ -239,6 +319,7 @@ func (s *State) getFullEventLog(ctx *gin.Context) {
 }
 
 func (s *State) getEventLogPage(ctx *gin.Context) {
+	eventLog := s.events()
 
 	var cursor int
 	rawCursor, exists := ctx.GetQuery("cursor")
@@ -255,7 +336,7 @@ func (s *State) getEventLogPage(ctx *gin.Context) {
 		}
 	}
 
-	latestIdx := max(0, len(s.eventLog)-1)
+	latestIdx := max(0, len(eventLog)-1)
 
 	lower := max(0, cursor)
 	upper := min(latestIdx, cursor+PAGE_SIZE)
@@ -271,7 +352,7 @@ func (s *State) getEventLogPage(ctx *gin.Context) {
 
 	for i := lower; i <= upper-1; i++ {
 		log[upper-i-1] = map[int]interface{}{
-			i: s.eventLog[i],
+			i: eventLog[i],
 		}
 	}
 
@@ -288,8 +369,9 @@ func (s *State) getEventLogPage(ctx *gin.Context) {
 }
 
 func (s *State) getLatestEventLogPage(ctx *gin.Context) {
+	eventLog := s.events()
 
-	latestIdx := max(0, len(s.eventLog)-1)
+	latestIdx := max(0, len(eventLog)-1)
 	lower := max(0, latestIdx-PAGE_SIZE)
 
 	log := make([]map[int]interface{}, latestIdx-lower)
@@ -301,15 +383,33 @@ func (s *State) getLatestEventLogPage(ctx *gin.Context) {
 
 	for i := lower; i <= latestIdx-1; i++ {
 		log[latestIdx-i-1] = map[int]interface{}{
-			i: s.eventLog[i],
+			i: eventLog[i],
 		}
 	}
 	ctx.JSON(http.StatusOK, log)
 }
 
-func (s *State) getTMI(ctx *gin.Context) {
+/*
+tmi returns a copy of the meta state of a TMI with copies of its version maps, so that it can be serialized without
+holding the lock. The contained snapshots are immutable.
+*/
+func (s *State) tmi(ctx *gin.Context) (tmiMetaState, bool) {
 	fullTMI := core.MergeFullTMIIdentifier(ctx.Param("client"), ctx.Param("session"), ctx.Param("tmt"), ctx.Param("tmiID"))
-	_, exists := s.tmis[fullTMI]
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	tmi, exists := s.tmis[fullTMI]
+	if !exists {
+		return tmiMetaState{}, false
+	}
+	result := *tmi
+	result.States = maps.Clone(tmi.States)
+	result.Update = maps.Clone(tmi.Update)
+	result.ATLs = maps.Clone(tmi.ATLs)
+	return result, true
+}
+
+func (s *State) getTMI(ctx *gin.Context) {
+	_, exists := s.tmi(ctx)
 	if !exists {
 		ctx.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND"})
 	} else {
@@ -318,8 +418,7 @@ func (s *State) getTMI(ctx *gin.Context) {
 }
 
 func (s *State) getTMIFull(ctx *gin.Context) {
-	fullTMI := core.MergeFullTMIIdentifier(ctx.Param("client"), ctx.Param("session"), ctx.Param("tmt"), ctx.Param("tmiID"))
-	tmi, exists := s.tmis[fullTMI]
+	tmi, exists := s.tmi(ctx)
 	if !exists {
 		ctx.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND"})
 		return
@@ -328,7 +427,7 @@ func (s *State) getTMIFull(ctx *gin.Context) {
 			"id":       tmi.ID,
 			"fullTMI":  tmi.FullTMI,
 			"active":   tmi.IsActive,
-			"template": tmi.Template.Identifier(),
+			"template": tmi.Template,
 			"states":   tmi.States,
 			"updates":  tmi.Update,
 			"atls":     tmi.ATLs,
@@ -340,8 +439,7 @@ func (s *State) getTMIFull(ctx *gin.Context) {
 }
 
 func (s *State) getTMIUpdates(ctx *gin.Context) {
-	fullTMI := core.MergeFullTMIIdentifier(ctx.Param("client"), ctx.Param("session"), ctx.Param("tmt"), ctx.Param("tmiID"))
-	tmi, exists := s.tmis[fullTMI]
+	tmi, exists := s.tmi(ctx)
 	if !exists {
 		ctx.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND"})
 		return
@@ -352,8 +450,7 @@ func (s *State) getTMIUpdates(ctx *gin.Context) {
 }
 
 func (s *State) getVersionTMI(ctx *gin.Context) {
-	fullTMI := core.MergeFullTMIIdentifier(ctx.Param("client"), ctx.Param("session"), ctx.Param("tmt"), ctx.Param("tmiID"))
-	tmi, exists := s.tmis[fullTMI]
+	tmi, exists := s.tmi(ctx)
 	if !exists {
 		ctx.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND"})
 	} else {
@@ -362,76 +459,61 @@ func (s *State) getVersionTMI(ctx *gin.Context) {
 			ctx.JSON(http.StatusNotFound, gin.H{"code": "VERSION_NOT_FOUND"})
 			return
 		}
-		if _, exists := s.tmis[fullTMI].States[version]; !exists {
+		if _, exists := tmi.States[version]; !exists {
 			ctx.JSON(http.StatusNotFound, gin.H{"code": "VERSION_NOT_FOUND"})
 			return
-		} else {
-			res := gin.H{
-				"id":       tmi.ID,
-				"fullTMI":  tmi.FullTMI,
-				"active":   tmi.IsActive,
-				"template": tmi.Template.Identifier(),
-				"state":    tmi.States[version],
-				"updates":  tmi.Update[version],
-			}
-
-			atls, atlExist := tmi.ATLs[version]
-			if !atlExist {
-				res["atls"] = nil
-			} else {
-				res["atls"] = atls
-			}
-			ctx.JSON(http.StatusOK, res)
 		}
+		ctx.JSON(http.StatusOK, versionResponse(tmi, version))
 	}
 }
 
 func (s *State) getTMILatest(ctx *gin.Context) {
-	fullTMI := core.MergeFullTMIIdentifier(ctx.Param("client"), ctx.Param("session"), ctx.Param("tmt"), ctx.Param("tmiID"))
-	tmi, exists := s.tmis[fullTMI]
+	tmi, exists := s.tmi(ctx)
 	if !exists {
 		ctx.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND"})
 	} else {
-		latestVersion := tmi.LatestVersion
-		res := gin.H{
-			"id":       tmi.ID,
-			"fullTMI":  tmi.FullTMI,
-			"active":   tmi.IsActive,
-			"template": tmi.Template.Identifier(),
-			"state":    tmi.States[latestVersion],
-			"updates":  tmi.Update[latestVersion],
-		}
-
-		atls, atlExist := tmi.ATLs[latestVersion]
-		if !atlExist {
-			res["atls"] = nil
-		} else {
-			res["atls"] = atls
-		}
-		ctx.JSON(http.StatusOK, res)
-
+		ctx.JSON(http.StatusOK, versionResponse(tmi, tmi.LatestVersion))
 	}
 }
 
-func (s *State) getAllTMIs(ctx *gin.Context) {
-
-	tmis := make(map[string]interface{})
-	i := 0
-	for fullTMI := range s.tmis {
-		tmis[fullTMI] = struct {
-			Id            string `json:"id"`
-			FullTMI       string `json:"fullTMI"`
-			Active        bool   `json:"active"`
-			Template      string `json:"template"`
-			LatestVersion int    `json:"latestVersion"`
-		}{
-			s.tmis[fullTMI].ID,
-			fullTMI,
-			s.tmis[fullTMI].IsActive,
-			s.tmis[fullTMI].Template.Identifier(),
-			s.tmis[fullTMI].LatestVersion,
-		}
-		i++
+func versionResponse(tmi tmiMetaState, version int) gin.H {
+	state, exists := tmi.States[version]
+	if !exists {
+		// same as serializing a missing entry of a map[int]tmiState
+		state, _ = json.Marshal(tmiState{})
 	}
+	res := gin.H{
+		"id":       tmi.ID,
+		"fullTMI":  tmi.FullTMI,
+		"active":   tmi.IsActive,
+		"template": tmi.Template,
+		"state":    state,
+		"updates":  tmi.Update[version],
+	}
+
+	atls, atlExist := tmi.ATLs[version]
+	if !atlExist {
+		res["atls"] = nil
+	} else {
+		res["atls"] = atls
+	}
+	return res
+}
+
+func (s *State) getAllTMIs(ctx *gin.Context) {
+	type tmiSummary struct {
+		Id            string `json:"id"`
+		FullTMI       string `json:"fullTMI"`
+		Active        bool   `json:"active"`
+		Template      string `json:"template"`
+		LatestVersion int    `json:"latestVersion"`
+	}
+
+	s.mutex.RLock()
+	tmis := make(map[string]tmiSummary, len(s.tmis))
+	for fullTMI, tmi := range s.tmis {
+		tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, tmi.IsActive, tmi.Template, tmi.LatestVersion}
+	}
+	s.mutex.RUnlock()
 	ctx.JSON(http.StatusOK, tmis)
 }

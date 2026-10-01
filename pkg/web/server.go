@@ -14,7 +14,6 @@ import (
 	logging "github.com/vs-uulm/go-taf/internal/logger"
 	"github.com/vs-uulm/go-taf/internal/version"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"github.com/vs-uulm/go-taf/pkg/listener"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 )
 
@@ -27,7 +26,7 @@ type Webserver struct {
 	tafContext       core.TafContext
 	logger           *slog.Logger
 	router           *gin.Engine
-	listenerChannel  chan listener.ListenerEvent
+	events           *eventQueue
 	websocketChannel chan WebSocketEvent
 	state            *State
 	tmts             map[string]interface{}
@@ -39,7 +38,7 @@ func New(tafContext core.TafContext) (*Webserver, error) {
 	return &Webserver{
 		tafContext:       tafContext,
 		logger:           logger,
-		listenerChannel:  make(chan listener.ListenerEvent),
+		events:           newEventQueue(),
 		websocketChannel: make(chan WebSocketEvent),
 		state:            NewState(logger),
 		tmts:             make(map[string]interface{}),
@@ -53,7 +52,7 @@ type WebSocketConnectedEvent struct {
 }
 
 func (s *Webserver) Run() {
-	go s.state.Handle(s.listenerChannel, s.websocketChannel)
+	go s.state.Handle(s.events, s.websocketChannel)
 
 	staticFS := fs.FS(webFrontend)
 	frontendDir, err := fs.Sub(staticFS, "frontend/dist")
@@ -61,16 +60,10 @@ func (s *Webserver) Run() {
 		panic(err)
 	}
 
-	var upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin:     func(r *http.Request) bool { return true },
-	}
-
 	gin.SetMode(gin.ReleaseMode) //Disable Gin-specific logging output
 	s.router = gin.New()         //Create a non-default router without request logging
 	s.router.Use(func(c *gin.Context) {
-		s.logger.Info("gin request", "uri", c.Request.RequestURI)
+		s.logger.Debug("gin request", "uri", c.Request.RequestURI)
 		c.Next()
 	})
 
@@ -79,27 +72,7 @@ func (s *Webserver) Run() {
 	s.router.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/ui")
 	})
-	s.router.GET("/ws", func(c *gin.Context) {
-		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-		if err != nil {
-			return
-		}
-
-		defer ws.Close()
-		s.websocketChannel <- WebSocketEvent{Socket: ws, Type: REGISTER}
-
-		for {
-			messageType, msg, err := ws.ReadMessage()
-			if err != nil {
-				s.websocketChannel <- WebSocketEvent{Socket: ws, Type: UNREGISTER}
-				break
-			}
-
-			if messageType == websocket.BinaryMessage || messageType == websocket.TextMessage {
-				s.logger.Info("received ws message", "msg", msg)
-			}
-		}
-	})
+	s.router.GET("/ws", s.handleWebSocket)
 
 	//	s.router.LoadHTMLGlob("res/templates/*")
 	s.router.GET("/api/events", s.state.getEventLogPage)
@@ -117,6 +90,42 @@ func (s *Webserver) Run() {
 	s.router.GET("/api/trustsources", s.getTrustSources)
 	s.router.GET("/api/trustmodels", s.getTrustModels)
 	s.router.Run(fmt.Sprintf(":%d", s.tafContext.Configuration.WebUI.Port))
+}
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
+/*
+handleWebSocket registers a new web socket client for receiving events and keeps reading from the connection until it
+is closed, which then unregisters the client.
+*/
+func (s *Webserver) handleWebSocket(c *gin.Context) {
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+
+	client := newWebSocketClient(ws)
+	go client.writeLoop()
+	s.websocketChannel <- WebSocketEvent{Client: client, Type: CONNECTED}
+	defer func() {
+		s.websocketChannel <- WebSocketEvent{Client: client, Type: DISCONNECTED}
+		ws.Close()
+	}()
+
+	for {
+		messageType, msg, err := ws.ReadMessage()
+		if err != nil {
+			break
+		}
+
+		if messageType == websocket.BinaryMessage || messageType == websocket.TextMessage {
+			s.logger.Debug("received ws message", "msg", msg)
+		}
+	}
 }
 
 func (s *Webserver) getTrustModels(ctx *gin.Context) {
