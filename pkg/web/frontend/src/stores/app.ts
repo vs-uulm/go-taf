@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { defineStore } from 'pinia';
+import { computed, markRaw, onUnmounted, ref, watch } from 'vue';
+import { RouteLocationNormalizedLoaded } from 'vue-router';
 
 export type TrustModelInstance = {
   id: string,
@@ -65,6 +67,10 @@ export const useAppStore = defineStore('app', {
     socket: null as (WebSocket|null),
     sessions: {} as {[key: string]: Session},
     trustModelInstances: {} as {[key: string]: TrustModelInstance},
+    // number of pages currently showing a TMI; states, updates, and ATLs are only kept for watched TMIs
+    watchedTrustModelInstances: {} as {[key: string]: number},
+    // incremented whenever the state has been re-fetched after a reconnect, so that pages can re-fetch their data
+    syncGeneration: 0,
   }),
 
   actions: {
@@ -72,9 +78,31 @@ export const useAppStore = defineStore('app', {
       this.socket = socket;
     },
 
+    watchTrustModelInstance(key: string) {
+      this.watchedTrustModelInstances[key] = (this.watchedTrustModelInstances[key] || 0) + 1;
+    },
+
+    unwatchTrustModelInstance(key: string) {
+      this.watchedTrustModelInstances[key] = (this.watchedTrustModelInstances[key] || 0) - 1;
+      if (this.watchedTrustModelInstances[key] <= 0) {
+        delete this.watchedTrustModelInstances[key];
+        // free the history of TMIs that are not shown anymore, it can be fetched again from the server
+        const tmi = this.trustModelInstances[key];
+        if (tmi) {
+          tmi.states = {};
+          tmi.updates = {};
+          tmi.atls = {};
+        }
+      }
+    },
+
+    isWatched(key: string): boolean {
+      return (this.watchedTrustModelInstances[key] || 0) > 0;
+    },
+
     processMessage(msg: any) {
       // process events by the taf and update state by replicating the go logic
-      console.log('[ws:recv]', msg);
+      // states, updates, and ATLs are only kept for watched TMIs and are not made reactive, as they never change
 
       switch (msg.EventType) {
         case 'SESSION_CREATED':
@@ -161,15 +189,15 @@ export const useAppStore = defineStore('app', {
             active: true,
             latestVersion: msg.Version,
             updates: {},
-            states: {
-              [String(msg.Version)]: {
+            states: this.isWatched(msg.FullTMI) ? {
+              [String(msg.Version)]: markRaw({
                 Version: msg.Version,
                 Fingerprint: msg.Fingerprint,
                 Structure: msg.Structure,
                 Values: msg.Values,
                 RTLs: msg.RTLs
-              }
-            },
+              })
+            } : {},
             atls: {}
           };
           break;
@@ -189,14 +217,11 @@ export const useAppStore = defineStore('app', {
             }
           */
           const key = msg.FullTMI;
-          if (this.trustModelInstances[key]) {
-            // ignore update if tmi is not known?
+          if (this.trustModelInstances[key] && this.isWatched(key)) {
             if (!this.trustModelInstances[key].atls) {
               this.trustModelInstances[key].atls = {};
             }
-            this.trustModelInstances[key].atls[msg.NewATLs.Version] = msg.NewATLs;
-          } else {
-            console.log('[warn] tmi not known', key);
+            this.trustModelInstances[key].atls[msg.NewATLs.Version] = markRaw(msg.NewATLs);
           }
           break;
         }
@@ -244,7 +269,11 @@ export const useAppStore = defineStore('app', {
 
           const key = msg.FullTMI;
           if (this.trustModelInstances[key]) {
-            // ignore update if tmi is not known?
+            this.trustModelInstances[key].latestVersion = Math.max(this.trustModelInstances[key].latestVersion, msg.Version);
+            if (!this.isWatched(key)) {
+              break;
+            }
+
             if (!this.trustModelInstances[key].states) {
               this.trustModelInstances[key].states = {};
             }
@@ -259,7 +288,7 @@ export const useAppStore = defineStore('app', {
                   this.trustModelInstances[key].updates[msg.Version + 1] = [];
                 }
 
-                this.trustModelInstances[key].updates[msg.Version + 1].push(msg.Update);
+                this.trustModelInstances[key].updates[msg.Version + 1].push(markRaw(msg.Update));
                 return;
               }
 
@@ -267,18 +296,13 @@ export const useAppStore = defineStore('app', {
                 this.trustModelInstances[key].updates[msg.Version] = [];
               }
 
-              this.trustModelInstances[key].updates[msg.Version].push(msg.Update);
+              this.trustModelInstances[key].updates[msg.Version].push(markRaw(msg.Update));
             }
 
-            this.trustModelInstances[key].states[msg.Version] = msg;
-          } else {
-            console.log('[warn] tmi not known', key);
+            this.trustModelInstances[key].states[msg.Version] = markRaw(msg);
           }
           break;
         }
-
-        default:
-          console.log('[incoming]', msg.EventType, JSON.stringify(msg, null, 2));
       }
     },
 
@@ -288,7 +312,6 @@ export const useAppStore = defineStore('app', {
 
       if (!this.trustModelInstances[key]) {
         const parts = res.data.fullTMI.split('/');
-        console.log(res.data);
         this.trustModelInstances[key] = {
           id: res.data.id,
           fullTMI: res.data.fullTMI,
@@ -304,46 +327,48 @@ export const useAppStore = defineStore('app', {
       }
 
       if (res.data.atls?.Version !== undefined) {
-        this.trustModelInstances[key].atls[res.data.atls.Version] = res.data.atls;
+        this.trustModelInstances[key].atls[res.data.atls.Version] = markRaw(res.data.atls);
       }
 
       if (res.data.state?.Version !== undefined) {
-        this.trustModelInstances[key].states[res.data.state.Version] = res.data.state;
+        this.trustModelInstances[key].states[res.data.state.Version] = markRaw(res.data.state);
 
         if (Array.isArray(res.data.updates)) {
-          this.trustModelInstances[key].updates[res.data.state.Version] = res.data.updates;
+          this.trustModelInstances[key].updates[res.data.state.Version] = res.data.updates.map(markRaw);
         }
       } else if (typeof(res.data.states) === 'object') {
-        this.trustModelInstances[key].states = res.data.states;
+        this.trustModelInstances[key].states = rawValues(res.data.states);
         if (typeof(res.data.updates) === 'object') {
-          this.trustModelInstances[key].updates = res.data.updates;
+          this.trustModelInstances[key].updates = Object.fromEntries(
+            Object.entries(res.data.updates || {}).map(([k, v]) => [k, Array.isArray(v) ? v.map(markRaw) : v])
+          );
         }
         if (typeof(res.data.atls) === 'object') {
-          this.trustModelInstances[key].atls = res.data.atls;
+          this.trustModelInstances[key].atls = rawValues(res.data.atls);
         }
       }
     },
 
     async fetchTrustModelInstances() {
       const req = await axios.get('/api/tmis');
-      this.trustModelInstances = Object.fromEntries(
-        Object.entries(req.data).map(([key, entry]: [string, any]) => {
-          const parts = key.split('/');
+      // update metadata only, so that already fetched states of watched TMIs are kept
+      for (const [key, entry] of Object.entries(req.data) as [string, any][]) {
+        const parts = key.split('/');
+        const existing = this.trustModelInstances[entry.fullTMI];
 
-          return [entry.fullTMI, {
-            id: entry.id,
-            fullTMI: entry.fullTMI,
-            client: parts[2],
-            sessionID: parts[3],
-            template: entry.template,
-            active: entry.active,
-            latestVersion: entry.latestVersion,
-            states: {},
-            updates: {},
-            atls: {}
-          }];
-        })
-      );
+        this.trustModelInstances[entry.fullTMI] = {
+          id: entry.id,
+          fullTMI: entry.fullTMI,
+          client: parts[2],
+          sessionID: parts[3],
+          template: entry.template,
+          active: entry.active,
+          latestVersion: entry.latestVersion,
+          states: existing?.states || {},
+          updates: existing?.updates || {},
+          atls: existing?.atls || {}
+        };
+      }
     },
 
     async fetchSessions() {
@@ -364,6 +389,51 @@ export const useAppStore = defineStore('app', {
     async init() {
       await this.fetchTrustModelInstances();
       await this.fetchSessions();
+    },
+
+    /*
+      resync re-fetches the state after a reconnect of the web socket, as events may have been missed in the meantime.
+    */
+    async resync() {
+      await this.init();
+      this.syncGeneration++;
     }
   }
 })
+
+function rawValues<T extends object>(obj: {[key: string]: T}): {[key: string]: T} {
+  return Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => [k, v && typeof v === 'object' ? markRaw(v) : v]));
+}
+
+/*
+useWatchedTrustModelInstance marks the TMI of the current route as watched while the calling component is mounted, so
+that its states, updates, and ATLs are kept in the store, and calls refresh whenever the data needs to be (re-)fetched.
+*/
+export function useWatchedTrustModelInstance(route: RouteLocationNormalizedLoaded, refresh: () => unknown) {
+  const store = useAppStore();
+  // the TMI currently registered as watched; tracked separately from the route, as the route already points to the
+  // next page when this component is unmounted
+  const watchedKey = ref<string | null>(null);
+  const key = computed(() => `//${route.params.client}/${route.params.sessionID}/${route.params.template}/${route.params.id}`);
+
+  watch(key, (newKey) => {
+    if (route.params.id === undefined || newKey === watchedKey.value) {
+      // the route does not point to a TMI anymore, e.g., while navigating away
+      return;
+    }
+    if (watchedKey.value) {
+      store.unwatchTrustModelInstance(watchedKey.value);
+    }
+    watchedKey.value = newKey;
+    store.watchTrustModelInstance(newKey);
+    refresh();
+  }, { immediate: true });
+  watch(() => store.syncGeneration, () => refresh());
+  onUnmounted(() => {
+    if (watchedKey.value) {
+      store.unwatchTrustModelInstance(watchedKey.value);
+    }
+  });
+
+  return computed(() => watchedKey.value ? store.trustModelInstances[watchedKey.value] : undefined);
+}

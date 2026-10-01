@@ -98,7 +98,7 @@
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useAppStore } from '@/stores/app';
+import { useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
 import { VDataTableVirtual } from 'vuetify/components';
 import { Column, SortItem } from '@/types';
 import router from '@/router';
@@ -136,12 +136,12 @@ const headers: Column[] = [{
   key: 'atls'
 }];
 
-const trustModelInstance = computed(() => store.trustModelInstances[`//${route.params.client}/${route.params.sessionID}/${route.params.template}/${route.params.id}`]);
+const trustModelInstance = useWatchedTrustModelInstance(route, refresh);
 // const items = computed(() => Object.values(trustModelInstance.value.states || {}));
-const items = computed(() => Object.entries(trustModelInstance.value.states || {}).map(([k, v]) => ({
+const items = computed(() => Object.entries(trustModelInstance.value?.states || {}).map(([k, v]) => ({
   version: k,
-  updates: trustModelInstance.value.updates?.[k]?.map?.((e: any) => JSON.stringify(e, null, 2)),
-  atls: trustModelInstance.value.atls?.[k],
+  updates: trustModelInstance.value?.updates?.[k]?.map?.((e: any) => JSON.stringify(e, null, 2)),
+  atls: trustModelInstance.value?.atls?.[k],
   state: v
 })));
 
@@ -163,6 +163,4 @@ async function refresh() {
     router.push('/');
   }
 }
-
-refresh();
 </script>

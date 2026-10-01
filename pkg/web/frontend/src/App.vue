@@ -52,6 +52,7 @@ import AlertDialog from './components/AlertDialog.vue';
 const dialog = ref<InstanceType<typeof AlertDialog> | null>(null);
 
 let connectionState = ref('');
+let hasConnected = false;
 
 function dialogCallHelper(fn: 'alert' | 'confirm' | 'prompt' | 'select', title: string, message: string = '', options: AlertOptions = {}): Promise<any> {
   if (!dialog.value) {
@@ -87,6 +88,11 @@ function connect() {
     console.log('[ws] connected');
     connectionState.value = 'connected';
     store.setSocket(ws);
+    // events may have been missed while disconnected, so fetch the current state again
+    if (hasConnected) {
+      store.resync();
+    }
+    hasConnected = true;
   });
   ws.addEventListener('close', () => {
     console.log('[ws] closed, reconnect in 1 sec');

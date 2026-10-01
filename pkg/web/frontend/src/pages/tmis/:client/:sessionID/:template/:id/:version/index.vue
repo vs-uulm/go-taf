@@ -5,7 +5,7 @@
     </v-btn>
   </Teleport>
 
-  <v-slider v-model="version" :min="0" :max="trustModelInstance.latestVersion" :step="1" show-ticks="always" tick-size="4" class="mt-1 ml-4">
+  <v-slider v-model="version" :min="0" :max="trustModelInstance?.latestVersion ?? 0" :step="1" show-ticks="always" tick-size="4" class="mt-1 ml-4">
     <template #append>
       <v-chip class="pr-0">
         Version
@@ -22,7 +22,7 @@
 <script lang='ts' setup>
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useAppStore } from '@/stores/app';
+import { useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
 
 const route = useRoute();
 const store = useAppStore();
@@ -40,7 +40,7 @@ const version = computed({
 
 watch(() => route.params.version, () => refresh());
 
-const state = computed(() => trustModelInstance.value.states?.[version.value]);
+const state = computed(() => trustModelInstance.value?.states?.[version.value]);
 
 async function refresh() {
   await store.fetchTrustModelInstance(
@@ -52,7 +52,5 @@ async function refresh() {
   );
 }
 
-const trustModelInstance = computed(() => store.trustModelInstances[`//${route.params.client}/${route.params.sessionID}/${route.params.template}/${route.params.id}`]);
-
-refresh();
+const trustModelInstance = useWatchedTrustModelInstance(route, refresh);
 </script>
