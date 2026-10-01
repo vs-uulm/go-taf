@@ -2,15 +2,15 @@ package trustmodel
 
 import (
 	"sync"
-	"time"
-
-	"github.com/vs-uulm/go-taf/cmd/flags"
 )
 
-var simulationTime = struct {
-	sync.RWMutex
-	ns int64
-}{}
+/*
+How nodes are timestamped and how their expiry is checked depends on the build:
+  - without the simulation build tag (nodelistener_nosim.go), nodes are timestamped with the wall clock and a wall-clock
+    ticker checks for expired nodes,
+  - with the simulation build tag (nodelistener_simulation.go), nodes are timestamped with the simulated time and the
+    expiry check is driven by the simulated time.
+*/
 
 type observer interface {
 	handleNodeAdded(identifier string)
@@ -26,6 +26,7 @@ type EntityObserver struct {
 	observers map[observer]bool
 	lock      *sync.RWMutex
 	ttl       int
+	expiry    *expiryState
 }
 
 func CreateListener(ttlSeconds int, checkIntervalSeconds int) EntityObserver {
@@ -35,40 +36,8 @@ func CreateListener(ttlSeconds int, checkIntervalSeconds int) EntityObserver {
 		lock:      &sync.RWMutex{},
 		ttl:       ttlSeconds,
 	}
-	listener.startExpiryLoop(time.Duration(checkIntervalSeconds) * time.Second)
+	listener.startExpiryLoop(checkIntervalSeconds)
 	return listener
-}
-
-func (l *EntityObserver) startExpiryLoop(checkInterval time.Duration) {
-	go func() {
-		for range time.Tick(checkInterval) {
-			l.lock.Lock()
-			if flags.SIMULATION && simulationTimeValue() > 0 {
-				latest := simulationTimeValue()
-				for key, ts := range l.nodes {
-					if latest > ts+int64(l.ttl)*1e9 {
-						delete(l.nodes, key)
-						l.notifyObserversOnNodeRemoved(key)
-					}
-				}
-			} else {
-				now := time.Now().Unix()
-				for key, ts := range l.nodes {
-					if now > ts+int64(l.ttl) {
-						delete(l.nodes, key)
-						l.notifyObserversOnNodeRemoved(key)
-					}
-				}
-			}
-			l.lock.Unlock()
-		}
-	}()
-}
-
-func simulationTimeValue() int64 {
-	simulationTime.RLock()
-	defer simulationTime.RUnlock()
-	return simulationTime.ns
 }
 
 func (l *EntityObserver) registerObserver(observer observer) {
@@ -91,34 +60,35 @@ func (l *EntityObserver) notifyObserversOnNodeRemoved(identifier string) {
 	}
 }
 
+/*
+AddNode adds or refreshes a node with the current time (see currentTimestamp).
+*/
 func (l *EntityObserver) AddNode(identifier string) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	_, exists := l.nodes[identifier]
-	l.nodes[identifier] = time.Now().Unix()
+	l.nodes[identifier] = currentTimestamp()
 	if !exists {
 		l.notifyObserversOnNodeAdded(identifier)
 	}
 }
 
+/*
+AddNodeAt adds or refreshes a node with the given timestamp in nanoseconds. In simulation builds, the timestamp also
+advances the simulated time.
+*/
 func (l *EntityObserver) AddNodeAt(identifier string, timestampNs int64) {
 	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	if flags.SIMULATION {
-		simulationTime.Lock()
-		if timestampNs > simulationTime.ns {
-			simulationTime.ns = timestampNs
-		}
-		simulationTime.Unlock()
-	}
-
 	_, exists := l.nodes[identifier]
 	l.nodes[identifier] = timestampNs
 	if !exists {
 		l.notifyObserversOnNodeAdded(identifier)
 	}
+	l.lock.Unlock()
+
+	// called without holding the lock, as advancing the simulated time checks all listeners for expired nodes
+	advanceSimulationTime(timestampNs)
 }
 
 func (l *EntityObserver) RemoveNode(identifier string) {
