@@ -7,7 +7,7 @@
     </v-btn>
   </Teleport>
 
-  <v-data-table-virtual :headers="headers" :items="filteredItems" :height="height" v-resize="onResize" multi-sort v-model:sort-by="sortBy" ref="table" @click:row="openTMI">
+  <v-data-table-virtual :headers="headers" :items="filteredItems" :height="height" v-resize="onResize" multi-sort v-model:sort-by="sortBy" @click:row="openTMI">
     <template #[`item.client`]="{ item }">
       <code class="mt-1">{{ item.client }}</code>
     </template>
@@ -28,12 +28,10 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { TrustModelInstance, useAppStore } from '@/stores/app';
-import { VDataTableVirtual } from 'vuetify/components';
 import { Column, SortItem } from '@/types';
 
 const filteredItems = ref<any[]>([]);
 const sortBy = ref<SortItem[]>([]);
-const table = ref<null|VDataTableVirtual>(null);
 
 const router = useRouter();
 const store = useAppStore();

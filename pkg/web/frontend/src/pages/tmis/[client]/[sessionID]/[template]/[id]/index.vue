@@ -18,7 +18,7 @@
     renders all rows if the items arrive before any row has been measured; item-value keeps rows stable when new
     versions are added at the top
   -->
-  <v-data-table-virtual :headers="headers" :items="filteredItems" item-value="version" :item-height="500" :height="height" v-resize="onResize" v-model:sort-by="sortBy" ref="table">
+  <v-data-table-virtual :headers="headers" :items="filteredItems" item-value="version" :item-height="500" :height="height" v-resize="onResize" v-model:sort-by="sortBy">
     <template #[`item.version`]="{ item }">
       <v-chip class="pr-0 mt-1" :to="`/tmis/${route.params.client as string}/${route.params.sessionID as string}/${route.params.template as string}/${route.params.id as string}/${item.version}`">
         Version
@@ -111,13 +111,11 @@ import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
-import { VDataTableVirtual } from 'vuetify/components';
 import { Column, SortItem } from '@/types';
 import router from '@/router';
 
 const filteredItems = ref<any[]>([]);
 const sortBy = ref<SortItem[]>([]);
-const table = ref<null|VDataTableVirtual>(null);
 
 const route = useRoute();
 

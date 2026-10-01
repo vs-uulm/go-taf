@@ -21,7 +21,8 @@ router.onError((err, to) => {
     if (!localStorage.getItem('vuetify:dynamic-reload')) {
       console.log('Reloading page to fix dynamic import error');
       localStorage.setItem('vuetify:dynamic-reload', 'true');
-      location.assign(to.fullPath);
+      // resolve the URL including the base path (/ui), which fullPath does not contain
+      location.assign(router.resolve(to).href);
     } else {
       console.error('Dynamic import error, reloading page did not fix it', err);
     }

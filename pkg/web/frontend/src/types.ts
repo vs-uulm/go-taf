@@ -23,9 +23,11 @@ export type AlertOptions = {
   description?: string,
   confirmText?: string,
   confirmIcon?: string|null,
+  confirmColor?: string,
   confirmValue?: any,
   cancelText?: string,
   cancelIcon?: string|null,
+  cancelColor?: string,
   cancelValue?: any,
 }
 
