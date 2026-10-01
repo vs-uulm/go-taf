@@ -77,7 +77,7 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 		}
 	case trustmodelupdate.UpdateAtomicTrustOpinion:
 		trustee := update.Trustee()
-		if strings.HasPrefix(trustee, "V_") {
+		if strings.HasPrefix(trustee, "V_") || strings.HasPrefix(trustee, "vehicle_") {
 			id, err := parseVehicleIdentifier(trustee)
 			if err == nil && id == e.targetVehicleID {
 				e.tchOpinion = update.Opinion()
@@ -259,7 +259,7 @@ func objectIdentifier(id string, source string) string {
 }
 
 var objectIdentifierPattern = regexp.MustCompile(`^C_(\d+)_(\d+)$`)
-var vehicleIdentifierPattern = regexp.MustCompile(`^V_(\d+|ego).*$`)
+var vehicleIdentifierPattern = regexp.MustCompile(`^(?:V|vehicle)_(\d+|ego).*$`)
 
 /*
 parseObjectIdentifier is a helper function to extract plain identifiers from an object identifier string.
