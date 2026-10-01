@@ -79,6 +79,26 @@ provide(Dialog, {
 
 const store = useAppStore();
 
+// messages are applied in batches, so that the UI is re-rendered at most once per interval instead of once per message
+const MESSAGE_BATCH_INTERVAL = 100;
+let queuedMessages: string[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushMessages() {
+  flushTimer = null;
+  const batch = queuedMessages;
+  queuedMessages = [];
+  const msgs = [];
+  for (const data of batch) {
+    try {
+      msgs.push(JSON.parse(data));
+    } catch (e) {
+      console.log('[ws] error', e);
+    }
+  }
+  store.processMessages(msgs);
+}
+
 function connect() {
   const ws = new WebSocket(`${location.origin.replace(/^http/, 'ws')}/ws`);
 
@@ -106,10 +126,9 @@ function connect() {
     ws.close();
   });
   ws.addEventListener('message', (evt) => {
-    try {
-      store.processMessage(JSON.parse(evt.data));
-    } catch (e) {
-      console.log('[ws] error', e);
+    queuedMessages.push(evt.data);
+    if (flushTimer === null) {
+      flushTimer = setTimeout(flushMessages, MESSAGE_BATCH_INTERVAL);
     }
   });
 }

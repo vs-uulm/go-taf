@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -336,10 +338,8 @@ func (s *State) getEventLogPage(ctx *gin.Context) {
 		}
 	}
 
-	latestIdx := max(0, len(eventLog)-1)
-
 	lower := max(0, cursor)
-	upper := min(latestIdx, cursor+PAGE_SIZE)
+	upper := min(len(eventLog), cursor+PAGE_SIZE)
 
 	if upper-lower == 0 {
 		ctx.JSON(http.StatusOK, make([]interface{}, 0))
@@ -361,8 +361,7 @@ func (s *State) getEventLogPage(ctx *gin.Context) {
 	if cursor != prev {
 		res["previous"] = prev
 	}
-	next := min(lower+PAGE_SIZE, latestIdx)
-	if cursor != next {
+	if next := lower + PAGE_SIZE; next < len(eventLog) {
 		res["next"] = next
 	}
 	ctx.JSON(http.StatusOK, res)
@@ -371,18 +370,18 @@ func (s *State) getEventLogPage(ctx *gin.Context) {
 func (s *State) getLatestEventLogPage(ctx *gin.Context) {
 	eventLog := s.events()
 
-	latestIdx := max(0, len(eventLog)-1)
-	lower := max(0, latestIdx-PAGE_SIZE)
+	upper := len(eventLog)
+	lower := max(0, upper-PAGE_SIZE)
 
-	log := make([]map[int]interface{}, latestIdx-lower)
+	log := make([]map[int]interface{}, upper-lower)
 
-	if latestIdx-lower == 0 {
+	if upper-lower == 0 {
 		ctx.JSON(http.StatusOK, log)
 		return
 	}
 
-	for i := lower; i <= latestIdx-1; i++ {
-		log[latestIdx-i-1] = map[int]interface{}{
+	for i := lower; i <= upper-1; i++ {
+		log[upper-i-1] = map[int]interface{}{
 			i: eventLog[i],
 		}
 	}
@@ -474,6 +473,70 @@ func (s *State) getTMILatest(ctx *gin.Context) {
 	} else {
 		ctx.JSON(http.StatusOK, versionResponse(tmi, tmi.LatestVersion))
 	}
+}
+
+/*
+VERSIONS_PAGE_SIZE defines the default and MAX_VERSIONS_PAGE_SIZE the maximum amount of TMI versions returned at once.
+*/
+const VERSIONS_PAGE_SIZE = 100
+const MAX_VERSIONS_PAGE_SIZE = 1000
+
+/*
+getTMIVersions returns the versions of a TMI (state, updates, and ATLs per version) in descending order, page by page.
+The optional query parameter before only returns versions older than the given version, limit sets the page size.
+*/
+func (s *State) getTMIVersions(ctx *gin.Context) {
+	tmi, exists := s.tmi(ctx)
+	if !exists {
+		ctx.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND"})
+		return
+	}
+
+	limit := VERSIONS_PAGE_SIZE
+	if rawLimit, exists := ctx.GetQuery("limit"); exists {
+		l, err := strconv.Atoi(rawLimit)
+		if err != nil || l <= 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_LIMIT"})
+			return
+		}
+		limit = min(l, MAX_VERSIONS_PAGE_SIZE)
+	}
+	before := math.MaxInt
+	if rawBefore, exists := ctx.GetQuery("before"); exists {
+		b, err := strconv.Atoi(rawBefore)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_VERSION"})
+			return
+		}
+		before = b
+	}
+
+	versions := slices.Sorted(maps.Keys(tmi.States))
+	slices.Reverse(versions)
+	start, found := slices.BinarySearchFunc(versions, before, func(version int, target int) int { return target - version })
+	if found {
+		start++ // before is exclusive
+	}
+	page := versions[start:min(start+limit, len(versions))]
+
+	items := make([]gin.H, len(page))
+	for i, version := range page {
+		items[i] = gin.H{
+			"version": version,
+			"state":   tmi.States[version],
+			"updates": tmi.Update[version],
+			"atls":    tmi.ATLs[version],
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"id":            tmi.ID,
+		"fullTMI":       tmi.FullTMI,
+		"active":        tmi.IsActive,
+		"template":      tmi.Template,
+		"latestVersion": tmi.LatestVersion,
+		"total":         len(versions),
+		"versions":      items,
+	})
 }
 
 func versionResponse(tmi tmiMetaState, version int) gin.H {

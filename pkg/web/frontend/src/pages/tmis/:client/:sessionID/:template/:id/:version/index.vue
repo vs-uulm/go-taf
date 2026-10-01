@@ -5,7 +5,7 @@
     </v-btn>
   </Teleport>
 
-  <v-slider v-model="version" :min="0" :max="trustModelInstance?.latestVersion ?? 0" :step="1" show-ticks="always" tick-size="4" class="mt-1 ml-4">
+  <v-slider v-model="version" :min="0" :max="trustModelInstance?.latestVersion ?? 0" :step="1" :show-ticks="(trustModelInstance?.latestVersion ?? 0) <= MAX_TICKS ? 'always' : false" tick-size="4" class="mt-1 ml-4">
     <template #append>
       <v-chip class="pr-0">
         Version
@@ -23,6 +23,9 @@
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
+
+// ticks are only shown for few versions, as each one is a DOM element
+const MAX_TICKS = 100;
 
 const route = useRoute();
 const store = useAppStore();

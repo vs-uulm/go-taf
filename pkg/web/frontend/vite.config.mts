@@ -34,6 +34,11 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // remove the results of previous builds from dist, as dist is committed and embedded into the TAF binary
+    // (this is the default for an outDir inside the project root, but stays in effect if outDir is ever moved)
+    emptyOutDir: true,
+  },
   define: { 'process.env': {} },
   resolve: {
     alias: {

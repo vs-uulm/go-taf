@@ -2,6 +2,11 @@
   <Teleport to="#toolbar">
     <faceted-search v-model="filteredItems" :columns="headers" :items="items" sync-to-query v-model:sort-by="sortBy" :defaults="{ sort: '-version' }" />
 
+    <v-chip size="small" class="mx-1 align-self-center" label :title="`The latest ${items.length} versions are shown`">{{ items.length }} versions</v-chip>
+    <v-btn icon :title="`Load ${PAGE_SIZE} older versions`" size="small" @click="loadOlder" :disabled="!hasOlder" variant="text">
+      <v-icon icon="mdi-history" />
+    </v-btn>
+
     <v-btn icon title="Refresh" size="small" @click="refresh" variant="text">
       <v-icon icon="mdi-reload" />
     </v-btn>
@@ -136,11 +141,30 @@ const headers: Column[] = [{
   key: 'atls'
 }];
 
-const trustModelInstance = useWatchedTrustModelInstance(route, refresh);
-// const items = computed(() => Object.values(trustModelInstance.value.states || {}));
+// versions are loaded page by page, newly arriving versions are added while keeping at most historyLimit versions
+const PAGE_SIZE = 100;
+const historyLimit = ref(PAGE_SIZE);
+const hasOlder = ref(false);
+
+const trustModelInstance = useWatchedTrustModelInstance(route, refresh, () => historyLimit.value);
+
+// updates never change, so each one is only stringified once
+const updateStrings = new WeakMap<object, string>();
+function stringifyUpdate(update: any): string {
+  if (update === null || typeof update !== 'object') {
+    return JSON.stringify(update, null, 2);
+  }
+  let str = updateStrings.get(update);
+  if (str === undefined) {
+    str = JSON.stringify(update, null, 2);
+    updateStrings.set(update, str);
+  }
+  return str;
+}
+
 const items = computed(() => Object.entries(trustModelInstance.value?.states || {}).map(([k, v]) => ({
-  version: k,
-  updates: trustModelInstance.value?.updates?.[k]?.map?.((e: any) => JSON.stringify(e, null, 2)),
+  version: Number(k),
+  updates: trustModelInstance.value?.updates?.[k]?.map?.(stringifyUpdate),
   atls: trustModelInstance.value?.atls?.[k],
   state: v
 })));
@@ -151,16 +175,34 @@ function onResize() {
   height.value = document.body.clientHeight - 48;
 }
 
-async function refresh() {
+async function fetchVersions(before?: number): Promise<boolean> {
   try {
-    await store.fetchTrustModelInstance(
+    const fetched = await store.fetchTrustModelInstanceVersions(
       route.params.client as string,
       route.params.sessionID as string,
       route.params.template as string,
       route.params.id as string,
+      PAGE_SIZE,
+      before,
     );
+    return fetched === PAGE_SIZE;
   } catch {
     router.push('/');
+    return false;
   }
+}
+
+async function refresh() {
+  historyLimit.value = PAGE_SIZE;
+  hasOlder.value = await fetchVersions();
+}
+
+async function loadOlder() {
+  const versions = Object.keys(trustModelInstance.value?.states || {}).map(Number);
+  if (!versions.length) {
+    return;
+  }
+  historyLimit.value = versions.length + PAGE_SIZE;
+  hasOlder.value = await fetchVersions(Math.min(...versions));
 }
 </script>
