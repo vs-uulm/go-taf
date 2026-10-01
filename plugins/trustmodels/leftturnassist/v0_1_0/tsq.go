@@ -7,17 +7,32 @@ import (
 
 func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQuantifier, error) {
 
+	//quantifies the residuals of the Python-based MBD (see mbdEvidence) with the selected mechanism
+	var mbdQuantify func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion
+
 	mbdTsqMechanism, exists := params["TRUST_QUANTIFICATION_MECHANISM_MBD"]
 	if exists {
 		switch mbdTsqMechanism {
 		case "f1-optimized":
-			//TODO
+			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
+				//TODO: implement
+				return &FullUncertainty
+			}
 		case "analytic":
-			//TODO
+			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
+				//TODO: implement
+				return &FullUncertainty
+			}
 		case "b-spline":
-			//TODO
+			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
+				//TODO: implement
+				return &FullUncertainty
+			}
 		case "mlp":
-			//TODO
+			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
+				//TODO: implement
+				return &FullUncertainty
+			}
 		default:
 			panic("Invalid TRUST_QUANTIFICATION_MECHANISM_MBD set: " + mbdTsqMechanism)
 		}
@@ -30,12 +45,8 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		Trustee:     "C_*_*",
 		Scope:       "C_*_*",
 		TrustSource: core.MBD,
-		Evidence:    []core.EvidenceType{core.MBD_MISBEHAVIOR_REPORT},
-		Quantifier: func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
-
-			//TODO: implement
-			return &FullUncertainty
-		},
+		Evidence:    mbdEvidence,
+		Quantifier:  mbdQuantify,
 	}
 
 	tchQuantifier := core.TrustSourceQuantifier{
@@ -70,6 +81,23 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 	}
 
 	return []core.TrustSourceQuantifier{ntmQuantifier, tchQuantifier, mbdQuantifier}, nil
+}
+
+/*
+mbdEvidence are the residuals between the prediction of the Python-based MBD and the received CAM, one per predicted
+feature, each normalized to [0,1].
+*/
+var mbdEvidence = []core.EvidenceType{
+	core.MBD_RELATIVE_POSITION_ERROR_X,
+	core.MBD_RELATIVE_POSITION_ERROR_Y,
+	core.MBD_SENDER_SPEED_ERROR_X,
+	core.MBD_SENDER_SPEED_ERROR_Y,
+	core.MBD_SENDER_ACCELERATION_ERROR_X,
+	core.MBD_SENDER_ACCELERATION_ERROR_Y,
+	core.MBD_DISTANCE_TO_ROAD_EDGE_ERROR,
+	core.MBD_RECEIVER_TIME_ERROR,
+	core.MBD_SENDER_HEADING_ERROR_SIN,
+	core.MBD_SENDER_HEADING_ERROR_COS,
 }
 
 func init() {
