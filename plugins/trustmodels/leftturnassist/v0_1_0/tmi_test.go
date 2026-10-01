@@ -25,10 +25,10 @@ func TestProportionalFusionWeightEgo(t *testing.T) {
 
 	direct, _ := subjectivelogic.NewOpinion(0.6, 0.3, 0.1, 0.5)
 	tch, _ := subjectivelogic.NewOpinion(0.7, 0.1, 0.2, 0.5)
-	ntm, _ := subjectivelogic.NewOpinion(0.2, 0.5, 0.3, 0.5)
+	cam, _ := subjectivelogic.NewOpinion(0.2, 0.5, 0.3, 0.5)
 	tmi.mbdOpinion = &direct
 	tmi.tchOpinion = &tch
-	tmi.ntmOpinion = &ntm
+	tmi.camOpinion = &cam
 	tmi.updateValues()
 
 	results, err := tlee.SpawnNewTLEE(slog.Default()).RunTLEE(tmi.ID(), tmi.Version(), tmi.Fingerprint(), tmi.Structure(), tmi.Values())
@@ -37,7 +37,7 @@ func TestProportionalFusionWeightEgo(t *testing.T) {
 	}
 
 	// V_ego -> V_x -> C_x_x, discounted with the default (base rate sensitive) discounting operator
-	path, err := subjectivelogic.TrustDiscounting(&tch, &ntm)
+	path, err := subjectivelogic.TrustDiscounting(&tch, &cam)
 	if err != nil {
 		t.Fatal(err)
 	}

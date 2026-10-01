@@ -37,7 +37,7 @@ func CreateTrustModelTemplate(name string, version string) core.TrustModelTempla
 			core.TCH_APPLICATION_ISOLATION,
 			core.TCH_CONTROL_FLOW_INTEGRITY,
 			core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION,
-			core.NTM_REMOTE_OPINION,
+			core.V2X_POSITION_OPINION,
 		),
 	}
 }
@@ -279,5 +279,6 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 		fusionWeightEgo:     fusionWeightEgo,
 		discountingOperator: discountingOperator,
 		trustDecision:       trustDecider,
+		camQuantifier:       createCamQuantifier(params),
 	}, nil
 }

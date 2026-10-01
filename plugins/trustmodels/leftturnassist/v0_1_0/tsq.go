@@ -62,25 +62,30 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		},
 	}
 
-	ntmQuantifier := core.TrustSourceQuantifier{
+	return []core.TrustSourceQuantifier{createCamQuantifier(params), tchQuantifier, mbdQuantifier}, nil
+}
+
+/*
+createCamQuantifier creates the quantifier for the position opinion a vehicle V_x sends about itself in its CAMs. CAMs do
+not pass through a trust source handler, so each TMI applies this quantifier itself when handling a RefreshCAM update
+(see TrustModelInstance.Update); the evidence is the received opinion as V2X_POSITION_OPINION.
+*/
+func createCamQuantifier(params map[string]string) core.TrustSourceQuantifier {
+	return core.TrustSourceQuantifier{
 		Trustor:     "V_*",
 		Trustee:     "C_*_*",
 		Scope:       "C_*_*",
-		TrustSource: core.NTM,
-		Evidence:    []core.EvidenceType{core.NTM_REMOTE_OPINION},
+		TrustSource: core.V2X,
+		Evidence:    []core.EvidenceType{core.V2X_POSITION_OPINION},
 		Quantifier: func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
 
-			//TODO: check implementtion
-			//Return first entry
-			for _, opinion := range m {
-				return opinion.(subjectivelogic.QueryableOpinion)
+			//TODO: implement, passes the received opinion through for now
+			if opinion, ok := m[core.V2X_POSITION_OPINION].(subjectivelogic.QueryableOpinion); ok {
+				return opinion
 			}
-
 			return &FullUncertainty
 		},
 	}
-
-	return []core.TrustSourceQuantifier{ntmQuantifier, tchQuantifier, mbdQuantifier}, nil
 }
 
 /*

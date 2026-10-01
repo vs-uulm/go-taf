@@ -21,8 +21,10 @@ type TrustModelInstance struct {
 	targetVehicleID string // ID x of vehicle V_{x} that is the source of the data
 
 	tchOpinion subjectivelogic.QueryableOpinion // Opinion V_ego -> V_{sourceID}
-	ntmOpinion subjectivelogic.QueryableOpinion // Opinion V_{sourceID} -> C_sourceID_{X}
+	camOpinion subjectivelogic.QueryableOpinion // Opinion V_{sourceID} -> C_sourceID_{X}, the position opinion of V_{sourceID} from its CAMs
 	mbdOpinion subjectivelogic.QueryableOpinion // Opinion V_ego -> C_sourceID_{X}
+
+	camQuantifier core.TrustSourceQuantifier // quantifies the position opinion of RefreshCAM updates into camOpinion
 
 	currentStructure   trustmodelstructure.TrustGraphStructure
 	currentValues      map[string][]trustmodelstructure.TrustRelationship
@@ -62,7 +64,7 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 	switch update := update.(type) {
 	case trustmodelupdate.RefreshCAM:
 		if update.SourceID() == e.targetVehicleID {
-			camOpinion, err := subjectivelogic.NewOpinion(
+			receivedOpinion, err := subjectivelogic.NewOpinion(
 				update.Opinion().Belief,
 				update.Opinion().Disbelief,
 				update.Opinion().Uncertainty,
@@ -70,7 +72,9 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 			)
 			if err == nil {
 
-				e.ntmOpinion = &camOpinion
+				e.camOpinion = e.camQuantifier.Quantifier(map[core.EvidenceType]interface{}{
+					core.V2X_POSITION_OPINION: &receivedOpinion,
+				})
 				e.updateValues()
 				e.incrementVersion()
 			}
@@ -168,7 +172,7 @@ func (e *TrustModelInstance) updateValues() {
 	values[scope] = []trustmodelstructure.TrustRelationship{
 		trustmodelstructure.NewTrustRelationshipDTO(ego, target, e.tchOpinion),
 		trustmodelstructure.NewTrustRelationshipDTO(ego, observation, e.mbdOpinion),
-		trustmodelstructure.NewTrustRelationshipDTO(target, observation, e.ntmOpinion),
+		trustmodelstructure.NewTrustRelationshipDTO(target, observation, e.camOpinion),
 	}
 
 	//set RTL
@@ -191,7 +195,7 @@ func (e *TrustModelInstance) Initialize(params map[string]interface{}) {
 	e.currentFingerprint = 0
 	e.rtls = map[string]subjectivelogic.QueryableOpinion{}
 	e.tchOpinion = &FullUncertainty
-	e.ntmOpinion = &FullUncertainty
+	e.camOpinion = &FullUncertainty
 	e.mbdOpinion = &FullUncertainty
 
 	e.updateStructure()
