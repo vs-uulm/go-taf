@@ -56,6 +56,12 @@ func (t TrustModelTemplate) Spawn(params map[string]string, context core.TafCont
 		return nil, nil, nil, err
 	} else {
 		spawner := NewDynamicTrustModelTemplateSpawner(t, params)
+		//the TMIs apply the quantifier for CAM position opinions themselves (see TrustModelInstance.Update)
+		for _, tsq := range tsqs {
+			if tsq.TrustSource == core.V2X {
+				spawner.camQuantifier = tsq
+			}
+		}
 		return tsqs, nil, spawner, nil
 	}
 }
@@ -81,8 +87,9 @@ func (tmt TrustModelTemplate) SigningHash() string {
 }
 
 type DynamicTrustModelTemplateSpawner struct {
-	template TrustModelTemplate
-	params   map[string]string
+	template      TrustModelTemplate
+	params        map[string]string
+	camQuantifier core.TrustSourceQuantifier
 }
 
 func NewDynamicTrustModelTemplateSpawner(template TrustModelTemplate, params map[string]string) DynamicTrustModelTemplateSpawner {
@@ -279,6 +286,6 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 		fusionWeightEgo:     fusionWeightEgo,
 		discountingOperator: discountingOperator,
 		trustDecision:       trustDecider,
-		camQuantifier:       createCamQuantifier(params),
+		camQuantifier:       t.camQuantifier,
 	}, nil
 }

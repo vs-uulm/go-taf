@@ -62,16 +62,9 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		},
 	}
 
-	return []core.TrustSourceQuantifier{createCamQuantifier(params), tchQuantifier, mbdQuantifier}, nil
-}
-
-/*
-createCamQuantifier creates the quantifier for the position opinion a vehicle V_x sends about itself in its CAMs. CAMs do
-not pass through a trust source handler, so each TMI applies this quantifier itself when handling a RefreshCAM update
-(see TrustModelInstance.Update); the evidence is the received opinion as V2X_POSITION_OPINION.
-*/
-func createCamQuantifier(params map[string]string) core.TrustSourceQuantifier {
-	return core.TrustSourceQuantifier{
+	//quantifies the position opinion a vehicle V_x sends about itself in its CAMs. CAMs do not pass through a trust source
+	//handler, so each TMI applies this quantifier itself when handling a RefreshCAM update (see TrustModelInstance.Update)
+	camQuantifier := core.TrustSourceQuantifier{
 		Trustor:     "V_*",
 		Trustee:     "C_*_*",
 		Scope:       "C_*_*",
@@ -86,6 +79,8 @@ func createCamQuantifier(params map[string]string) core.TrustSourceQuantifier {
 			return &FullUncertainty
 		},
 	}
+
+	return []core.TrustSourceQuantifier{camQuantifier, tchQuantifier, mbdQuantifier}, nil
 }
 
 /*
