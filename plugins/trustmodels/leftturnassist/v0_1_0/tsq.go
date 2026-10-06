@@ -1,6 +1,8 @@
 package leftturnassist_v0_1_0
 
 import (
+	"fmt"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
 )
@@ -13,26 +15,29 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 	mbdTsqMechanism, exists := params["TRUST_QUANTIFICATION_MECHANISM_MBD"]
 	if exists {
 		switch mbdTsqMechanism {
-		case "f1-optimized":
-			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
-				//TODO: implement
-				return &FullUncertainty
+		case "f1-optimized", "analytic":
+			//Both use the analytic quantification approach and only differ in the parameters
+			//TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: content of the parameters JSON file
+			//(f1-optimized: parameters_f1_only.json, analytic: parameters_multi_objective.json)
+			slParams, err := loadMbdSLParams(mbdParamJSON(params))
+			if err != nil {
+				return nil, fmt.Errorf("loading %s MBD quantification: %w", mbdTsqMechanism, err)
 			}
-		case "analytic":
-			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
-				//TODO: implement
-				return &FullUncertainty
-			}
+			mbdQuantify = mbdFeatureQuantifier(slParams.computeTrustOpinion)
 		case "b-spline":
-			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
-				//TODO: implement
-				return &FullUncertainty
+			//TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: content of the B-spline model JSON file (bspline_model.json)
+			bsplineModel, err := loadMbdBsplineModel(mbdParamJSON(params))
+			if err != nil {
+				return nil, fmt.Errorf("loading %s MBD quantification: %w", mbdTsqMechanism, err)
 			}
+			mbdQuantify = mbdFeatureQuantifier(bsplineModel.computeTrustOpinion)
 		case "mlp":
-			mbdQuantify = func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
-				//TODO: implement
-				return &FullUncertainty
+			//TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: content of the MLP model JSON file (mlp_model.json)
+			mlpModel, err := loadMbdMlpModel(mbdParamJSON(params))
+			if err != nil {
+				return nil, fmt.Errorf("loading %s MBD quantification: %w", mbdTsqMechanism, err)
 			}
+			mbdQuantify = mbdFeatureQuantifier(mlpModel.computeTrustOpinion)
 		default:
 			panic("Invalid TRUST_QUANTIFICATION_MECHANISM_MBD set: " + mbdTsqMechanism)
 		}
@@ -72,9 +77,9 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		Evidence:    []core.EvidenceType{core.V2X_POSITION_OPINION},
 		Quantifier: func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
 
-			//TODO: implement, passes the received opinion through for now
-			if opinion, ok := m[core.V2X_POSITION_OPINION].(subjectivelogic.QueryableOpinion); ok {
-				return opinion
+			//Return first entry
+			for _, opinion := range m {
+				return opinion.(subjectivelogic.QueryableOpinion)
 			}
 			return &FullUncertainty
 		},
@@ -98,6 +103,34 @@ var mbdEvidence = []core.EvidenceType{
 	core.MBD_RECEIVER_TIME_ERROR,
 	core.MBD_SENDER_HEADING_ERROR_SIN,
 	core.MBD_SENDER_HEADING_ERROR_COS,
+}
+
+// mbdParamJSON returns the JSON content set in TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM
+func mbdParamJSON(params map[string]string) string {
+	paramJSON, exists := params["TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM"]
+	if !exists {
+		panic("No value set for TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM")
+	}
+	return paramJSON
+}
+
+// mbdFeatureQuantifier creates a quantifier that derives the six MBD features from the evidence
+// and maps them to an opinion using the given quantification approach
+func mbdFeatureQuantifier(compute func([mbdNumFeatures]float64) mbdOpinion) func(map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
+	return func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
+		features, err := mbdFeatures(m)
+		if err != nil {
+			return &FullUncertainty
+		}
+		op := compute(features)
+		//Normalize, as clamping u (B-spline/MLP u_min) can violate b+d+u=1
+		sum := op.B + op.D + op.U
+		opinion, err := subjectivelogic.NewOpinion(op.B/sum, op.D/sum, op.U/sum, 0.5)
+		if err != nil {
+			return &FullUncertainty
+		}
+		return &opinion
+	}
 }
 
 func init() {
