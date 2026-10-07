@@ -73,9 +73,9 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		Evidence:    []core.EvidenceType{core.V2X_POSITION_OPINION},
 		Quantifier: func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
 
-			//Return first entry
-			for _, opinion := range m {
-				return opinion.(subjectivelogic.QueryableOpinion)
+			//TODO: implement, passes the received opinion through for now
+			if opinion, ok := m[core.V2X_POSITION_OPINION].(subjectivelogic.QueryableOpinion); ok {
+				return opinion
 			}
 			return &FullUncertainty
 		},
