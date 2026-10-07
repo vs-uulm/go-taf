@@ -66,6 +66,8 @@ const (
 	TCH_CONFIGURATION_INTEGRITY_VERIFICATION
 	NTM_REMOTE_OPINION
 	V2X_POSITION_OPINION
+	TCH_COMMUNICATION_PROTECTION
+	TCH_KEY_PROTECTION
 )
 
 func (e EvidenceType) String() string {
@@ -122,6 +124,10 @@ func (e EvidenceType) String() string {
 		return "REMOTE_OPINION"
 	case V2X_POSITION_OPINION:
 		return "POSITION_OPINION"
+	case TCH_COMMUNICATION_PROTECTION:
+		return "COMMUNICATION_PROTECTION"
+	case TCH_KEY_PROTECTION:
+		return "KEY_PROTECTION"
 	default:
 		return "UNKNOWN_EVIDENCE"
 	}
@@ -200,6 +206,10 @@ func (e EvidenceType) Source() TrustSource {
 		return NTM
 	case V2X_POSITION_OPINION:
 		return V2X
+	case TCH_COMMUNICATION_PROTECTION:
+		return TCH
+	case TCH_KEY_PROTECTION:
+		return TCH
 	default:
 		return NONE
 	}
@@ -265,6 +275,10 @@ func EvidenceTypeBySourceAndName(ts TrustSource, name string) EvidenceType {
 			return TCH_CONTROL_FLOW_INTEGRITY
 		case strings.ToUpper(name) == TCH_CONFIGURATION_INTEGRITY_VERIFICATION.String():
 			return TCH_CONFIGURATION_INTEGRITY_VERIFICATION
+		case strings.ToUpper(name) == TCH_COMMUNICATION_PROTECTION.String():
+			return TCH_COMMUNICATION_PROTECTION
+		case strings.ToUpper(name) == TCH_KEY_PROTECTION.String():
+			return TCH_KEY_PROTECTION
 		default:
 			return UNKNOWN
 		}
