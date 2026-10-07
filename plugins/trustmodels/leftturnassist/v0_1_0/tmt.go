@@ -30,13 +30,7 @@ func CreateTrustModelTemplate(name string, version string) core.TrustModelTempla
 	return TrustModelTemplate{
 		name:    name,
 		version: version,
-		evidenceTypes: append(slices.Clone(mbdEvidence),
-			core.TCH_SECURE_BOOT,
-			core.TCH_SECURE_OTA,
-			core.TCH_ACCESS_CONTROL,
-			core.TCH_APPLICATION_ISOLATION,
-			core.TCH_CONTROL_FLOW_INTEGRITY,
-			core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION,
+		evidenceTypes: append(append(slices.Clone(mbdEvidence), tchEvidence...),
 			core.V2X_POSITION_OPINION,
 		),
 	}

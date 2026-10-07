@@ -59,12 +59,8 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		Trustee:     "V_*",
 		Scope:       "C_*_*",
 		TrustSource: core.TCH,
-		Evidence:    []core.EvidenceType{core.TCH_SECURE_BOOT, core.TCH_SECURE_OTA, core.TCH_ACCESS_CONTROL, core.TCH_APPLICATION_ISOLATION, core.TCH_CONTROL_FLOW_INTEGRITY, core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION},
-		Quantifier: func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
-
-			//TODO: implement
-			return &FullUncertainty
-		},
+		Evidence:    tchEvidence,
+		Quantifier:  quantifyTCH,
 	}
 
 	//quantifies the position opinion a vehicle V_x sends about itself in its CAMs. CAMs do not pass through a trust source
@@ -103,6 +99,72 @@ var mbdEvidence = []core.EvidenceType{
 	core.MBD_RECEIVER_TIME_ERROR,
 	core.MBD_SENDER_HEADING_ERROR_SIN,
 	core.MBD_SENDER_HEADING_ERROR_COS,
+}
+
+/*
+tchEvidence are the claims attested by the TCH that protect the chain from the firmware start to the signed position
+message of a vehicle. Each claim has the same weight.
+*/
+var tchEvidence = []core.EvidenceType{
+	core.TCH_SECURE_BOOT,
+	core.TCH_KEY_PROTECTION,
+	core.TCH_CONTROL_FLOW_INTEGRITY,
+	core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION,
+	core.TCH_COMMUNICATION_PROTECTION,
+}
+
+// tchBaseClaims are the claims whose failure invalidates all remaining claims, as the firmware or the attestation
+// keys may be compromised
+var tchBaseClaims = map[core.EvidenceType]bool{
+	core.TCH_SECURE_BOOT:    true,
+	core.TCH_KEY_PROTECTION: true,
+}
+
+// tchMaxCertainty limits belief + disbelief of the TCH opinion; the remainder is uncertainty, so the opinion is not
+// dogmatic, depending on the requirements this can be adjusted, for NOW it allows dogmatic opinions
+const tchMaxCertainty = 1.0
+
+/*
+quantifyTCH maps the appraisals of the attested claims to an opinion:
+
+	 1 (claim verified)          -> belief += w
+	 0 (attestation failed)      -> disbelief += w; for a base claim: belief = 0, disbelief = tchMaxCertainty,
+	                                uncertainty = 1 - tchMaxCertainty
+	-1 (control not implemented) -> disbelief += w
+	-2 or no evidence            -> w remains uncertainty
+
+with w = tchMaxCertainty/len(tchEvidence). The meaning of the appraisals corresponds to the IMA trust model
+(trustmodel-ima-standalone-v0.0.1): base claims correspond to output weight 2, all other claims to output weight 1.
+*/
+func quantifyTCH(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
+	weight := tchMaxCertainty / float64(len(tchEvidence))
+	belief := 0.0
+	disbelief := 0.0
+
+	for _, claim := range tchEvidence {
+		appraisal, ok := m[claim].(int)
+		if !ok {
+			continue
+		}
+		switch appraisal {
+		case 1:
+			belief += weight
+		case -1:
+			disbelief += weight
+		case 0:
+			if tchBaseClaims[claim] {
+				opinion, _ := subjectivelogic.NewOpinion(0, tchMaxCertainty, 1-tchMaxCertainty, 0.5)
+				return &opinion
+			}
+			disbelief += weight
+		}
+	}
+
+	opinion, err := subjectivelogic.NewOpinion(belief, disbelief, max(0, 1-belief-disbelief), 0.5)
+	if err != nil {
+		return &FullUncertainty
+	}
+	return &opinion
 }
 
 // mbdParamJSON returns the JSON content set in TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM
