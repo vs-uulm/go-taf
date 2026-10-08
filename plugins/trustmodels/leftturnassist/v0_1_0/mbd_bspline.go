@@ -17,14 +17,10 @@ var mbdModelFeatureOrder = [mbdNumFeatures]string{
 
 // mbdBsplineModel represents the B-spline model JSON (content of bspline_model.json)
 type mbdBsplineModel struct {
-	Variant       string      `json:"variant"`
 	Features      []string    `json:"features"`
 	Degree        int         `json:"degree"`
 	Extrapolation string      `json:"extrapolation"`
 	UMin          float64     `json:"u_min"`
-	BaseRate      float64     `json:"base_rate"`
-	Threshold     float64     `json:"threshold"`
-	Temperature   float64     `json:"temperature"`
 	Knots         [][]float64 `json:"knots"`
 	NBasis        []int       `json:"n_basis"`
 	WB            []float64   `json:"w_b"`
@@ -79,15 +75,6 @@ func (m *mbdBsplineModel) finalize() error {
 	}
 	if m.UMin == 0 {
 		m.UMin = 1e-3
-	}
-	if m.BaseRate == 0 {
-		m.BaseRate = 0.5
-	}
-	if m.Threshold == 0 {
-		m.Threshold = 0.5
-	}
-	if m.Temperature == 0 {
-		m.Temperature = 1.0
 	}
 	return nil
 }

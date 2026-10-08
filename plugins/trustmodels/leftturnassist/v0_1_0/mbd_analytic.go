@@ -44,13 +44,11 @@ type mbdSLParams struct {
 	AlpD [mbdNumFeatures]float64
 	BetD [mbdNumFeatures]float64
 
-	Fusion      mbdFusionOp
-	DecisionThr float64
+	Fusion mbdFusionOp
 }
 
 // mbdSLModel represents the parameters JSON (e.g. content of parameters_f1_only.json)
 type mbdSLModel struct {
-	Variant      string    `json:"variant"`
 	FeatureOrder []string  `json:"feature_order"`
 	AlpB         []float64 `json:"alpB"`
 	BetB         []float64 `json:"betB"`
@@ -59,7 +57,6 @@ type mbdSLModel struct {
 	Thr          []float64 `json:"thr"`
 	Trust        []float64 `json:"trust"`
 	FusionOp     string    `json:"fusion_op"`
-	DecisionThr  float64   `json:"decision_thr"`
 }
 
 // loadMbdSLParams parses the parameters JSON (content of e.g. parameters_f1_only.json) and converts it into mbdSLParams
@@ -101,11 +98,6 @@ func loadMbdSLParams(rawJSON string) (mbdSLParams, error) {
 		p.Fusion = mbdFusionOp(m.FusionOp)
 	default:
 		return p, fmt.Errorf("unknown fusion operator %q", m.FusionOp)
-	}
-
-	p.DecisionThr = m.DecisionThr
-	if p.DecisionThr == 0 {
-		p.DecisionThr = 0.5
 	}
 	return p, nil
 }

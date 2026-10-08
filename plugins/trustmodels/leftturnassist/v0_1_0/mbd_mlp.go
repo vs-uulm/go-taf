@@ -15,15 +15,10 @@ type mbdMlpLayer struct {
 
 // mbdMlpModel represents the MLP model JSON (content of mlp_model.json)
 type mbdMlpModel struct {
-	Variant      string        `json:"variant"`
 	Features     []string      `json:"features"`
 	FeatureMeans []float64     `json:"feature_means"`
 	FeatureStds  []float64     `json:"feature_stds"`
-	HiddenDims   []int         `json:"hidden_dims"`
 	UMin         float64       `json:"u_min"`
-	BaseRate     float64       `json:"base_rate"`
-	Threshold    float64       `json:"threshold"`
-	Temperature  float64       `json:"temperature"`
 	Layers       []mbdMlpLayer `json:"layers"`
 }
 
@@ -56,15 +51,6 @@ func (m *mbdMlpModel) finalize() error {
 	}
 	if m.UMin == 0 {
 		m.UMin = 1e-3
-	}
-	if m.BaseRate == 0 {
-		m.BaseRate = 0.5
-	}
-	if m.Threshold == 0 {
-		m.Threshold = 0.5
-	}
-	if m.Temperature == 0 {
-		m.Temperature = 1.0
 	}
 	// Dimension check: first layer input == number of features, layers chain, last output == 2
 	inDim := mbdNumFeatures
