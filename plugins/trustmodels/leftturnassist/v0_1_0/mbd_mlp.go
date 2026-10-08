@@ -6,6 +6,7 @@ package leftturnassist_v0_1_0
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 )
 
 type mbdMlpLayer struct {
@@ -45,6 +46,13 @@ func (m *mbdMlpModel) finalize() error {
 	}
 	if len(m.FeatureMeans) != mbdNumFeatures || len(m.FeatureStds) != mbdNumFeatures {
 		return fmt.Errorf("feature_means/feature_stds length != %d", mbdNumFeatures)
+	}
+	// the features are standardized by dividing by their standard deviation, which a value of 0 (e.g., a feature that
+	// was constant in the training data) would turn into an invalid opinion for every input
+	for i, std := range m.FeatureStds {
+		if !(std > 0) || math.IsInf(std, 0) {
+			return fmt.Errorf("feature_stds[%d] (%s) is %v, expected a positive finite value", i, m.Features[i], std)
+		}
 	}
 	if len(m.Layers) == 0 {
 		return fmt.Errorf("no layers")
