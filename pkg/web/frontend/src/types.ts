@@ -41,6 +41,10 @@ export type FilterSettings = {
 export type Column = {
   filterable?: boolean,
   filterSettings?: FilterSettings,
+  // if set, a filter on this column is not applied to the items, but emitted via update:remoteFilters to be resolved by
+  // the parent (only with remoteSearch)
+  remoteFilter?: boolean,
+  minWidth?: string,
   maxWidth?: string,
   title: string,
   key: string,

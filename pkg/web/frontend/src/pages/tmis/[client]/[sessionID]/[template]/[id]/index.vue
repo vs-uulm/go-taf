@@ -1,8 +1,8 @@
 <template>
   <Teleport to="#toolbar">
-    <faceted-search v-model="filteredItems" :columns="headers" :items="items" sync-to-query v-model:sort-by="sortBy" :defaults="{ sort: '-version' }" remote-search @update:search="onSearch" />
+    <faceted-search v-model="filteredItems" :columns="searchColumns" :items="items" sync-to-query v-model:sort-by="sortBy" :defaults="{ sort: '-version' }" remote-search @update:search="onSearch" @update:remoteFilters="onRemoteFilters" />
 
-    <v-chip v-if="searchTerm" size="small" class="mx-1 align-self-center" label :title="`${items.length} of ${matches} versions matching the search are loaded`">{{ items.length }} / {{ matches }} matching versions</v-chip>
+    <v-chip v-if="searchTerm || decision" size="small" class="mx-1 align-self-center" label :title="`${items.length} of ${matches} versions matching the search are loaded`">{{ items.length }} / {{ matches }} matching versions</v-chip>
     <v-chip v-else size="small" class="mx-1 align-self-center" label :title="`The latest ${items.length} versions are shown`">{{ items.length }} versions</v-chip>
     <v-btn icon :title="`Load ${PAGE_SIZE} older versions`" size="small" @click="loadOlder" :disabled="!hasOlder" variant="text">
       <v-icon icon="mdi-history" />
@@ -18,9 +18,10 @@
     renders all rows if the items arrive before any row has been measured; item-value keeps rows stable when new
     versions are added at the top
   -->
-  <v-data-table-virtual :headers="headers" :items="filteredItems" item-value="version" :item-height="500" :height="height" v-resize="onResize" v-model:sort-by="sortBy">
+  <!-- scroll does not bubble, so it is caught in the capture phase from the table's scroll container -->
+  <v-data-table-virtual :headers="headers" :items="filteredItems" item-value="version" :item-height="ROW_HEIGHT" :height="height" v-resize="onResize" v-model:sort-by="sortBy" @scroll.capture="onScroll">
     <template #[`item.version`]="{ item }">
-      <v-chip class="pr-0 mt-1" :to="`/tmis/${route.params.client as string}/${route.params.sessionID as string}/${route.params.template as string}/${route.params.id as string}/${item.version}`">
+      <v-chip class="pr-0 mt-1 text-no-wrap" :to="`/tmis/${route.params.client as string}/${route.params.sessionID as string}/${route.params.template as string}/${route.params.id as string}/${item.version}`">
         Version
         <v-chip class="ml-1 font-weight-bold">{{ item.version }}</v-chip>
       </v-chip>
@@ -50,7 +51,10 @@
             </tr>
             <tr>
               <th class="text-left">Trust Decision</th>
-              <td><code>{{ item.atls.TdResults[scope] }}</code></td>
+              <td>
+                <code>{{ item.atls.TdResults[scope] }}</code>
+                <v-chip v-if="TRUST_DECISIONS[item.atls.TdResults[scope]]" size="x-small" label class="ml-2" :color="TRUST_DECISION_COLORS[TRUST_DECISIONS[item.atls.TdResults[scope]]]" variant="flat">{{ TRUST_DECISION_LABELS[TRUST_DECISIONS[item.atls.TdResults[scope]]] }}</v-chip>
+              </td>
             </tr>
           </tbody>
         </v-table>
@@ -107,10 +111,10 @@
 </style>
 
 <script lang='ts' setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
+import { TRUST_DECISION_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
 import { Column, SortItem } from '@/types';
 import router from '@/router';
 
@@ -121,7 +125,8 @@ const route = useRoute();
 
 const store = useAppStore();
 const headers: Column[] = [{
-  maxWidth: '100px',
+  // wide enough for the "Version" chip with a number of several digits, which a maximum width cut off
+  minWidth: '160px',
   filterable: true,
   title: 'Version',
   key: 'version',
@@ -146,17 +151,56 @@ const headers: Column[] = [{
   key: 'atls'
 }];
 
+// the search additionally offers a filter on the trust decision, which the server resolves over the whole history
+const searchColumns: Column[] = [...headers, {
+  filterable: true,
+  remoteFilter: true,
+  title: 'Trust Decision',
+  key: 'decision',
+  filterSettings: {
+    type: 'select',
+    items: Object.entries(TRUST_DECISION_LABELS).map(([value, title]) => ({ title, value, color: TRUST_DECISION_COLORS[value as keyof typeof TRUST_DECISION_COLORS] })),
+    itemText: 'title',
+    itemValue: 'value'
+  }
+}];
+
 // versions are loaded page by page, newly arriving versions are added while keeping at most historyLimit versions
 const PAGE_SIZE = 100;
+// estimated row height in pixels, see the comment on the table
+const ROW_HEIGHT = 500;
 const historyLimit = ref<number | undefined>(PAGE_SIZE);
-const hasOlder = ref(false);
-// the search term is resolved by the server, so that it covers all versions instead of only the loaded ones
+// whether the last fetch of a search or filter returned a full page, i.e. more matching versions may exist
+const fetchedHasOlder = ref(false);
+// oldest version below which the server returned no versions, to stop loading if versions are missing
+const exhaustedBelow = ref<number | undefined>(undefined);
+// the search term and the trust decision filter are resolved by the server, so that they cover all versions instead of
+// only the loaded ones
 const searchTerm = ref('');
+const decision = ref('');
 const matches = ref(0);
 // incremented with each refresh, so that responses of outdated searches are discarded
 let generation = 0;
 
 const trustModelInstance = useWatchedTrustModelInstance(route, refresh, () => historyLimit.value);
+
+const oldestLoadedVersion = computed(() => {
+  const versions = Object.keys(trustModelInstance.value?.states || {}).map(Number);
+  return versions.length ? Math.min(...versions) : undefined;
+});
+
+/*
+hasOlder tells whether older versions can be loaded. Without search or filter, versions are numbered from 0 without gaps,
+but the oldest loaded ones are dropped while new versions arrive live, so it is derived from the oldest loaded version
+instead of from the last fetch. Searches and filters do not drop versions, so their last fetch decides.
+*/
+const hasOlder = computed(() => {
+  if (searchTerm.value || decision.value) {
+    return fetchedHasOlder.value;
+  }
+  const oldest = oldestLoadedVersion.value;
+  return oldest !== undefined && oldest > 0 && oldest !== exhaustedBelow.value;
+});
 
 // updates never change, so each one is only stringified once
 const updateStrings = new WeakMap<object, string>();
@@ -185,7 +229,8 @@ function onResize() {
   height.value = document.body.clientHeight - 48;
 }
 
-async function fetchVersions(before?: number): Promise<boolean> {
+// returns the amount of fetched versions
+async function fetchVersions(before?: number): Promise<number> {
   const current = generation;
   try {
     const { fetched, matches: total } = await store.fetchTrustModelInstanceVersions(
@@ -196,36 +241,78 @@ async function fetchVersions(before?: number): Promise<boolean> {
       PAGE_SIZE,
       before,
       searchTerm.value,
+      decision.value,
       () => current === generation,
     );
     if (current === generation) {
       matches.value = total;
     }
-    return fetched === PAGE_SIZE;
+    return fetched;
   } catch {
     router.push('/');
-    return false;
+    return 0;
   }
 }
 
 async function refresh() {
   generation++;
-  // while searching, the matching versions of the whole history are shown and no new versions are added live, as they
-  // may not match the search
-  historyLimit.value = searchTerm.value ? undefined : PAGE_SIZE;
+  // while searching or filtering, the matching versions of the whole history are shown and no new versions are added
+  // live, as they may not match
+  historyLimit.value = searchTerm.value || decision.value ? undefined : PAGE_SIZE;
   store.clearTrustModelInstanceHistory(`//${route.params.client}/${route.params.sessionID}/${route.params.template}/${route.params.id}`);
-  hasOlder.value = await fetchVersions();
+  exhaustedBelow.value = undefined;
+  fetchedHasOlder.value = await fetchVersions() === PAGE_SIZE;
 }
 
 async function loadOlder() {
-  const versions = Object.keys(trustModelInstance.value?.states || {}).map(Number);
-  if (!versions.length) {
+  const oldest = oldestLoadedVersion.value;
+  if (oldest === undefined) {
     return;
   }
   if (historyLimit.value !== undefined) {
-    historyLimit.value = versions.length + PAGE_SIZE;
+    historyLimit.value = Object.keys(trustModelInstance.value?.states || {}).length + PAGE_SIZE;
   }
-  hasOlder.value = await fetchVersions(Math.min(...versions));
+  const fetched = await fetchVersions(oldest);
+  fetchedHasOlder.value = fetched === PAGE_SIZE;
+  if (fetched === 0) {
+    exhaustedBelow.value = oldest;
+  }
+}
+
+/*
+Loads older versions automatically when the table is scrolled to its end, if it shows the newest versions first (the
+default sort order), so that its end are the oldest loaded versions.
+*/
+let loadingOlder = false;
+let scroller: HTMLElement | undefined;
+
+function atEnd(el: HTMLElement): boolean {
+  return el.scrollTop + el.clientHeight >= el.scrollHeight - 2 * ROW_HEIGHT;
+}
+
+function onScroll(evt: Event) {
+  scroller = evt.target as HTMLElement;
+  if (atEnd(scroller)) {
+    loadOlderAtEnd();
+  }
+}
+
+async function loadOlderAtEnd() {
+  const sortedNewestFirst = sortBy.value[0]?.key === 'version' && sortBy.value[0]?.order === 'desc';
+  if (loadingOlder || !hasOlder.value || !sortedNewestFirst) {
+    return;
+  }
+  loadingOlder = true;
+  try {
+    await loadOlder();
+  } finally {
+    loadingOlder = false;
+  }
+  // if the loaded versions do not fill the remaining space, the end is still visible and no scroll event follows
+  await nextTick();
+  if (scroller && atEnd(scroller)) {
+    loadOlderAtEnd();
+  }
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -238,5 +325,13 @@ function onSearch(term: string) {
     searchTerm.value = term;
     refresh();
   }, 300);
+}
+
+function onRemoteFilters(filters: { [key: string]: string }) {
+  const value = filters.decision ?? '';
+  if (value !== decision.value) {
+    decision.value = value;
+    refresh();
+  }
 }
 </script>

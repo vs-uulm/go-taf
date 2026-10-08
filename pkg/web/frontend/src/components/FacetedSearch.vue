@@ -52,7 +52,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'update:modelValue', payload: any[]): void,
   (event: 'update:sortBy', payload: SortItem[]): void,
-  (event: 'update:search', payload: string): void
+  (event: 'update:search', payload: string): void,
+  (event: 'update:remoteFilters', payload: { [key: string]: string }): void
 }>();
 
 type Filter = {
@@ -163,6 +164,9 @@ function update(syncToQuery: boolean=true) {
 
   if (props.remoteSearch) {
     emit('update:search', search.value || '');
+    emit('update:remoteFilters', Object.fromEntries(filters.value
+      .filter((f) => props.columns.some((e) => e.key === f.value && e.remoteFilter))
+      .map((f) => [f.value, String(f.filter)])));
   } else if (search.value?.length) {
     const term = search.value.toLocaleLowerCase();
     items = items.filter((item) => props.columns.some((e) => {
@@ -180,6 +184,9 @@ function update(syncToQuery: boolean=true) {
 
   if (filters.value?.length && Array.isArray(props.items)) {
     items = items.filter((item) => filters.value.every((f) => {
+      if (props.remoteSearch && props.columns.some((e) => e.key === f.value && e.remoteFilter)) {
+        return true;
+      }
       const value = getObjectValueByPath(item, f.value);
       if (f.filter instanceof RegExp) {
         return f.filter.test(value);

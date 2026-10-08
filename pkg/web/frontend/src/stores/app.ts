@@ -13,6 +13,9 @@ export type TrustModelInstance = {
   latestVersion: number,
   // number of versions whose ATL result set contains each trust decision
   decisionCounts: DecisionCounts,
+  // trust decisions per version (index = version, bit 1 << TdResults value per decision, 0 without ATLs), only for
+  // watched TMIs whose page fetched them
+  decisionsByVersion?: number[],
   states: {[key: string]: TrustModelInstanceState},
   atls: {[key: string]: ActualTrustworthinessLevel},
   updates: {[key: string]: TrustModelInstanceUpdate}
@@ -26,6 +29,18 @@ export type DecisionCounts = {[decision in TrustDecision]: number};
 
 // names of the trust decisions by their value in TdResults (core.TrustDecision)
 export const TRUST_DECISIONS: TrustDecision[] = ['NOT_TRUSTWORTHY', 'TRUSTWORTHY', 'UNDECIDABLE'];
+
+export const TRUST_DECISION_LABELS: {[decision in TrustDecision]: string} = {
+  TRUSTWORTHY: 'Trustworthy',
+  NOT_TRUSTWORTHY: 'Not trustworthy',
+  UNDECIDABLE: 'Undecidable'
+};
+
+export const TRUST_DECISION_COLORS: {[decision in TrustDecision]: string} = {
+  TRUSTWORTHY: 'success',
+  NOT_TRUSTWORTHY: 'error',
+  UNDECIDABLE: 'grey'
+};
 
 function emptyDecisionCounts(): DecisionCounts {
   return { TRUSTWORTHY: 0, NOT_TRUSTWORTHY: 0, UNDECIDABLE: 0 };
@@ -112,6 +127,7 @@ export const useAppStore = defineStore('app', {
           tmi.states = {};
           tmi.updates = {};
           tmi.atls = {};
+          delete tmi.decisionsByVersion;
         }
       }
     },
@@ -313,6 +329,11 @@ export const useAppStore = defineStore('app', {
             }
             decisions.forEach((d) => counts[d]++);
             lastCountedDecisions.set(key, { version: msg.NewATLs.Version, decisions });
+
+            const byVersion = this.trustModelInstances[key].decisionsByVersion;
+            if (byVersion && this.isWatched(key)) {
+              byVersion[msg.NewATLs.Version] = [...decisions].reduce((bits, d) => bits | (1 << TRUST_DECISIONS.indexOf(d)), 0);
+            }
           }
           if (this.trustModelInstances[key] && this.isLive(key) && this.trustModelInstances[key].states[msg.NewATLs.Version]) {
             if (!this.trustModelInstances[key].atls) {
@@ -454,13 +475,17 @@ export const useAppStore = defineStore('app', {
       versions and the total amount of matching versions. The result is discarded if isCurrent returns false, e.g.,
       because a newer search has been started in the meantime.
     */
-    async fetchTrustModelInstanceVersions(client: string, sessionID: string, template: string, id: string, limit: number, before?: number, search?: string, isCurrent: () => boolean = () => true): Promise<{ fetched: number, matches: number }> {
+    async fetchTrustModelInstanceVersions(client: string, sessionID: string, template: string, id: string, limit: number, before?: number, search?: string, decision?: string, isCurrent: () => boolean = () => true): Promise<{ fetched: number, matches: number }> {
       const params: {[key: string]: string | number} = { limit };
       if (before !== undefined) {
         params.before = before;
       }
       if (search) {
         params.search = search;
+      }
+      // only versions whose ATLs contain this trust decision, resolved by the server over the whole history
+      if (decision) {
+        params.decision = decision;
       }
       const res = await axios.get(`/api/tmis/${client}/${sessionID}/${template}/${id}/versions`, { params });
       if (!isCurrent()) {
@@ -495,6 +520,19 @@ export const useAppStore = defineStore('app', {
         }
       }
       return { fetched: res.data.versions.length, matches: res.data.matches };
+    },
+
+    /*
+      fetchTrustModelInstanceDecisions fetches the trust decisions of all versions of a known TMI, which are then kept up
+      to date while it is watched.
+    */
+    async fetchTrustModelInstanceDecisions(client: string, sessionID: string, template: string, id: string) {
+      const res = await axios.get(`/api/tmis/${client}/${sessionID}/${template}/${id}/decisions`);
+      const tmi = this.trustModelInstances[`//${client}/${sessionID}/${template}/${id}`];
+      if (tmi) {
+        tmi.decisionsByVersion = res.data.decisions;
+        tmi.latestVersion = Math.max(tmi.latestVersion, res.data.latestVersion);
+      }
     },
 
     async fetchTrustModelInstances() {

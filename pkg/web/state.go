@@ -111,6 +111,16 @@ func (tmi *tmiMetaState) countDecisions(version int, decisions map[string]core.T
 	tmi.Decisions[version] = bits
 }
 
+// decisionByName returns the trust decision with the given name, as used in the TMI overview.
+func decisionByName(name string) (core.TrustDecision, bool) {
+	for _, d := range trustDecisions {
+		if d.name == name {
+			return d.decision, true
+		}
+	}
+	return 0, false
+}
+
 // decisionCountsByName returns the number of versions per trust decision, keyed by decision name.
 func (tmi *tmiMetaState) decisionCountsByName() map[string]int {
 	counts := make(map[string]int, len(trustDecisions))
@@ -457,6 +467,8 @@ func (s *State) tmi(ctx *gin.Context) (tmiMetaState, bool) {
 	result.States = maps.Clone(tmi.States)
 	result.Update = maps.Clone(tmi.Update)
 	result.ATLs = maps.Clone(tmi.ATLs)
+	result.Decisions = maps.Clone(tmi.Decisions)
+	result.DecisionCounts = maps.Clone(tmi.DecisionCounts)
 	return result, true
 }
 
@@ -538,6 +550,8 @@ const MAX_VERSIONS_PAGE_SIZE = 1000
 getTMIVersions returns the versions of a TMI (state, updates, and ATLs per version) in descending order, page by page.
 The optional query parameter before only returns versions older than the given version, limit sets the page size.
 The optional query parameter search only returns versions whose number or updates contain the given term (ignoring case).
+The optional query parameter decision only returns versions whose ATL result set contains the given trust decision
+(TRUSTWORTHY, NOT_TRUSTWORTHY, or UNDECIDABLE); search and decision can be combined.
 */
 func (s *State) getTMIVersions(ctx *gin.Context) {
 	tmi, exists := s.tmi(ctx)
@@ -565,9 +579,22 @@ func (s *State) getTMIVersions(ctx *gin.Context) {
 		before = b
 	}
 
+	var decisionFilter uint8
+	if rawDecision, exists := ctx.GetQuery("decision"); exists && rawDecision != "" {
+		decision, valid := decisionByName(rawDecision)
+		if !valid {
+			ctx.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_DECISION"})
+			return
+		}
+		decisionFilter = decisionBit(decision)
+	}
+
 	versions := slices.Sorted(maps.Keys(tmi.States))
 	slices.Reverse(versions)
 	total := len(versions)
+	if decisionFilter != 0 {
+		versions = slices.DeleteFunc(versions, func(version int) bool { return tmi.Decisions[version]&decisionFilter == 0 })
+	}
 	if search, exists := ctx.GetQuery("search"); exists && search != "" {
 		versions = slices.DeleteFunc(versions, func(version int) bool { return !versionMatches(tmi, version, search) })
 	}
@@ -639,6 +666,34 @@ func versionResponse(tmi tmiMetaState, version int) gin.H {
 		res["atls"] = atls
 	}
 	return res
+}
+
+/*
+getTMIDecisions returns the trust decisions of all versions of a TMI as one number per version (index = version), with
+bit 1<<d set for every trust decision d (core.TrustDecision) in the version's ATL result set and 0 for versions without
+one, e.g., for coloring a timeline of the versions.
+*/
+func (s *State) getTMIDecisions(ctx *gin.Context) {
+	tmi, exists := s.tmi(ctx)
+	if !exists {
+		ctx.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND"})
+		return
+	}
+	last := tmi.LatestVersion
+	for version := range tmi.Decisions {
+		last = max(last, version)
+	}
+	// ints instead of uint8s, as a []uint8 would be marshaled as base64
+	decisions := make([]int, last+1)
+	for version, bits := range tmi.Decisions {
+		if version >= 0 {
+			decisions[version] = int(bits)
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"latestVersion": tmi.LatestVersion,
+		"decisions":     decisions,
+	})
 }
 
 func (s *State) getAllTMIs(ctx *gin.Context) {
