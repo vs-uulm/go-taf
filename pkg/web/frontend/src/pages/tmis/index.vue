@@ -20,6 +20,10 @@
     <template #[`item.active`]="{ item }">
       <v-checkbox-btn v-model="item.active" readonly />
     </template>
+    <template #[`item.decisionCounts.NOT_TRUSTWORTHY`]="{ item }">
+      <v-chip v-if="item.decisionCounts.NOT_TRUSTWORTHY > 0" color="error" size="small" variant="flat">{{ item.decisionCounts.NOT_TRUSTWORTHY }}</v-chip>
+      <span v-else>0</span>
+    </template>
   </v-data-table-virtual>
 </template>
 
@@ -61,6 +65,19 @@ const headers: Column[] = [{
   filterable: true,
   title: 'Latest Version',
   key: 'latestVersion'
+}, {
+  // number of versions whose ATL result set contains the trust decision
+  filterable: true,
+  title: 'Trustworthy',
+  key: 'decisionCounts.TRUSTWORTHY'
+}, {
+  filterable: true,
+  title: 'Not Trustworthy',
+  key: 'decisionCounts.NOT_TRUSTWORTHY'
+}, {
+  filterable: true,
+  title: 'Undecidable',
+  key: 'decisionCounts.UNDECIDABLE'
 }];
 
 const items = computed(() => Object.values(store.trustModelInstances));

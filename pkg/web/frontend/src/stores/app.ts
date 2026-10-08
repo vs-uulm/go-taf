@@ -11,12 +11,29 @@ export type TrustModelInstance = {
   template: string,
   active: boolean,
   latestVersion: number,
+  // number of versions whose ATL result set contains each trust decision
+  decisionCounts: DecisionCounts,
   states: {[key: string]: TrustModelInstanceState},
   atls: {[key: string]: ActualTrustworthinessLevel},
   updates: {[key: string]: TrustModelInstanceUpdate}
 };
 
 export type TrustModelInstanceUpdate = any
+
+export type TrustDecision = 'TRUSTWORTHY' | 'NOT_TRUSTWORTHY' | 'UNDECIDABLE';
+
+export type DecisionCounts = {[decision in TrustDecision]: number};
+
+// names of the trust decisions by their value in TdResults (core.TrustDecision)
+export const TRUST_DECISIONS: TrustDecision[] = ['NOT_TRUSTWORTHY', 'TRUSTWORTHY', 'UNDECIDABLE'];
+
+function emptyDecisionCounts(): DecisionCounts {
+  return { TRUSTWORTHY: 0, NOT_TRUSTWORTHY: 0, UNDECIDABLE: 0 };
+}
+
+// trust decisions of the latest ATL result set counted live per TMI, so that a result set replacing it for the same
+// version replaces its decisions instead of counting them twice; not part of the reactive state
+const lastCountedDecisions = new Map<string, { version: number, decisions: Set<TrustDecision> }>();
 
 export type SubjectiveLogicOpinion = {
   belief: number,
@@ -256,6 +273,7 @@ export const useAppStore = defineStore('app', {
             template: parts[4],
             active: true,
             latestVersion: msg.Version,
+            decisionCounts: emptyDecisionCounts(),
             updates: {},
             states: this.isLive(msg.FullTMI) ? {
               [String(msg.Version)]: markRaw({
@@ -285,6 +303,17 @@ export const useAppStore = defineStore('app', {
             }
           */
           const key = msg.FullTMI;
+          if (this.trustModelInstances[key]) {
+            // counted for every TMI, as the overview shows the counts of all of them
+            const decisions = new Set(Object.values(msg.NewATLs.TdResults ?? {}).map((d) => TRUST_DECISIONS[d as number]));
+            const counts = this.trustModelInstances[key].decisionCounts;
+            const last = lastCountedDecisions.get(key);
+            if (last && last.version === msg.NewATLs.Version) {
+              last.decisions.forEach((d) => counts[d]--);
+            }
+            decisions.forEach((d) => counts[d]++);
+            lastCountedDecisions.set(key, { version: msg.NewATLs.Version, decisions });
+          }
           if (this.trustModelInstances[key] && this.isLive(key) && this.trustModelInstances[key].states[msg.NewATLs.Version]) {
             if (!this.trustModelInstances[key].atls) {
               this.trustModelInstances[key].atls = {};
@@ -389,6 +418,7 @@ export const useAppStore = defineStore('app', {
           template: res.data.template,
           active: res.data.active,
           latestVersion: res.data.latestVersion,
+          decisionCounts: emptyDecisionCounts(),
           atls: {},
           states: {},
           updates: {},
@@ -448,6 +478,7 @@ export const useAppStore = defineStore('app', {
           template: res.data.template,
           active: res.data.active,
           latestVersion: res.data.latestVersion,
+          decisionCounts: emptyDecisionCounts(),
           atls: {},
           states: {},
           updates: {},
@@ -481,6 +512,7 @@ export const useAppStore = defineStore('app', {
           template: entry.template,
           active: entry.active,
           latestVersion: entry.latestVersion,
+          decisionCounts: entry.decisionCounts ?? emptyDecisionCounts(),
           states: existing?.states || {},
           updates: existing?.updates || {},
           atls: existing?.atls || {}

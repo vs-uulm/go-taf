@@ -69,6 +69,55 @@ type tmiMetaState struct {
 	States        map[int]json.RawMessage   // marshaled tmiState
 	Template      string
 	ATLs          map[int]json.RawMessage // marshaled core.AtlResultSet
+	// Decisions holds the trust decisions contained in the ATL result set of each version (a bit per decision, see
+	// decisionBit); DecisionCounts counts the versions whose result set contains each decision.
+	Decisions      map[int]uint8
+	DecisionCounts map[core.TrustDecision]int
+}
+
+// trustDecisions lists all trust decisions with their names in the TMI overview.
+var trustDecisions = []struct {
+	decision core.TrustDecision
+	name     string
+}{
+	{core.TRUSTWORTHY, "TRUSTWORTHY"},
+	{core.NOT_TRUSTWORTHY, "NOT_TRUSTWORTHY"},
+	{core.UNDECIDABLE, "UNDECIDABLE"},
+}
+
+func decisionBit(decision core.TrustDecision) uint8 {
+	return 1 << decision
+}
+
+/*
+countDecisions sets the trust decisions of a version from its ATL result set and updates the per-decision counts. A
+version counts once per decision it contains, also if several propositions share it; a later result set for the same
+version replaces the earlier one.
+*/
+func (tmi *tmiMetaState) countDecisions(version int, decisions map[string]core.TrustDecision) {
+	var bits uint8
+	for _, decision := range decisions {
+		bits |= decisionBit(decision)
+	}
+	previous := tmi.Decisions[version]
+	for _, d := range trustDecisions {
+		if previous&decisionBit(d.decision) != 0 {
+			tmi.DecisionCounts[d.decision]--
+		}
+		if bits&decisionBit(d.decision) != 0 {
+			tmi.DecisionCounts[d.decision]++
+		}
+	}
+	tmi.Decisions[version] = bits
+}
+
+// decisionCountsByName returns the number of versions per trust decision, keyed by decision name.
+func (tmi *tmiMetaState) decisionCountsByName() map[string]int {
+	counts := make(map[string]int, len(trustDecisions))
+	for _, d := range trustDecisions {
+		counts[d.name] = tmi.DecisionCounts[d.decision]
+	}
+	return counts
 }
 
 type sessionState struct {
@@ -198,6 +247,7 @@ func (s *State) handleATLUpdatedEvent(event listener.ATLUpdatedEvent) error {
 		return nil
 	}
 	tmi.ATLs[event.NewATLs.Version()] = atls
+	tmi.countDecisions(event.NewATLs.Version(), event.NewATLs.TrustDecisions())
 	return nil
 }
 
@@ -223,14 +273,16 @@ func (s *State) handleTMISpawned(event listener.TrustModelInstanceSpawnedEvent) 
 	}
 
 	s.tmis[fullTMI] = &tmiMetaState{
-		IsActive:      true,
-		LatestVersion: 0,
-		Update:        make(map[int][]json.RawMessage),
-		States:        map[int]json.RawMessage{event.Version: state},
-		Template:      event.Template.Identifier(),
-		ID:            event.ID,
-		FullTMI:       event.FullTMI,
-		ATLs:          make(map[int]json.RawMessage),
+		IsActive:       true,
+		LatestVersion:  0,
+		Update:         make(map[int][]json.RawMessage),
+		States:         map[int]json.RawMessage{event.Version: state},
+		Template:       event.Template.Identifier(),
+		ID:             event.ID,
+		FullTMI:        event.FullTMI,
+		ATLs:           make(map[int]json.RawMessage),
+		Decisions:      make(map[int]uint8),
+		DecisionCounts: make(map[core.TrustDecision]int),
 	}
 	return nil
 }
@@ -596,12 +648,14 @@ func (s *State) getAllTMIs(ctx *gin.Context) {
 		Active        bool   `json:"active"`
 		Template      string `json:"template"`
 		LatestVersion int    `json:"latestVersion"`
+		// number of versions whose ATL result set contains each trust decision
+		DecisionCounts map[string]int `json:"decisionCounts"`
 	}
 
 	s.mutex.RLock()
 	tmis := make(map[string]tmiSummary, len(s.tmis))
 	for fullTMI, tmi := range s.tmis {
-		tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, tmi.IsActive, tmi.Template, tmi.LatestVersion}
+		tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, tmi.IsActive, tmi.Template, tmi.LatestVersion, tmi.decisionCountsByName()}
 	}
 	s.mutex.RUnlock()
 	ctx.JSON(http.StatusOK, tmis)
