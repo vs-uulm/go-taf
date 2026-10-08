@@ -21,21 +21,21 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 			//(f1-optimized: parameters_f1_only.json, analytic: parameters_multi_objective.json)
 			slParams, err := loadMbdSLParams(mbdParamJSON(params))
 			if err != nil {
-				return nil, fmt.Errorf("loading %s MBD quantification: %w", mbdTsqMechanism, err)
+				panic(fmt.Sprintf("Could not load %s MBD quantification from TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: %v", mbdTsqMechanism, err))
 			}
 			mbdQuantify = mbdFeatureQuantifier(slParams.computeTrustOpinion)
 		case "b-spline":
 			//TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: content of the B-spline model JSON file (bspline_model.json)
 			bsplineModel, err := loadMbdBsplineModel(mbdParamJSON(params))
 			if err != nil {
-				return nil, fmt.Errorf("loading %s MBD quantification: %w", mbdTsqMechanism, err)
+				panic(fmt.Sprintf("Could not load %s MBD quantification from TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: %v", mbdTsqMechanism, err))
 			}
 			mbdQuantify = mbdFeatureQuantifier(bsplineModel.computeTrustOpinion)
 		case "mlp":
 			//TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: content of the MLP model JSON file (mlp_model.json)
 			mlpModel, err := loadMbdMlpModel(mbdParamJSON(params))
 			if err != nil {
-				return nil, fmt.Errorf("loading %s MBD quantification: %w", mbdTsqMechanism, err)
+				panic(fmt.Sprintf("Could not load %s MBD quantification from TRUST_QUANTIFICATION_MECHANISM_MBD_PARAM: %v", mbdTsqMechanism, err))
 			}
 			mbdQuantify = mbdFeatureQuantifier(mlpModel.computeTrustOpinion)
 		default:
