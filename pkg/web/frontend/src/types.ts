@@ -46,6 +46,9 @@ export type Column = {
   remoteFilter?: boolean,
   minWidth?: string,
   maxWidth?: string,
+  sortable?: boolean,
+  // compares two items for sorting by this column, instead of their values
+  sortRaw?: (a: any, b: any) => number,
   title: string,
   key: string,
 }

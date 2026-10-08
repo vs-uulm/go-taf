@@ -33,7 +33,7 @@
 <script lang='ts' setup>
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { TRUST_DECISION_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
+import { TRUST_DECISION_COLORS, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
 
 // ticks are only shown for few versions, as each one is a DOM element
 const MAX_TICKS = 100;
@@ -58,19 +58,11 @@ watch(() => route.params.version, () => loadVersion());
 
 const state = computed(() => trustModelInstance.value?.states?.[version.value]);
 
-// track colors matching the decision chips; grey is no theme color, so it is derived from the text color like the
-// neutral color of versions without ATLs
-const TRACK_COLORS: {[decision in TrustDecision]: string} = {
-  TRUSTWORTHY: 'rgb(var(--v-theme-success))',
-  NOT_TRUSTWORTHY: 'rgb(var(--v-theme-error))',
-  UNDECIDABLE: 'rgba(var(--v-theme-on-surface), 0.38)'
-};
-
 // color of a version on the track: a negative decision dominates, versions without ATLs stay neutral
 function decisionColor(bits: number): string {
   for (const d of ['NOT_TRUSTWORTHY', 'UNDECIDABLE', 'TRUSTWORTHY'] as TrustDecision[]) {
     if (bits & (1 << TRUST_DECISIONS.indexOf(d))) {
-      return TRACK_COLORS[d];
+      return TRUST_DECISION_CSS_COLORS[d];
     }
   }
   return 'rgba(var(--v-theme-on-surface), 0.12)';

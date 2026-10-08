@@ -36,6 +36,14 @@ export const TRUST_DECISION_LABELS: {[decision in TrustDecision]: string} = {
   UNDECIDABLE: 'Undecidable'
 };
 
+// CSS colors of the trust decisions, shared by the version timeline and the decision summary of the TMI overview; grey
+// is no theme color, so it is derived from the text color
+export const TRUST_DECISION_CSS_COLORS: {[decision in TrustDecision]: string} = {
+  TRUSTWORTHY: 'rgb(var(--v-theme-success))',
+  NOT_TRUSTWORTHY: 'rgb(var(--v-theme-error))',
+  UNDECIDABLE: 'rgba(var(--v-theme-on-surface), 0.38)'
+};
+
 export const TRUST_DECISION_COLORS: {[decision in TrustDecision]: string} = {
   TRUSTWORTHY: 'success',
   NOT_TRUSTWORTHY: 'error',
