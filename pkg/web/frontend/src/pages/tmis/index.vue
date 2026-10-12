@@ -1,20 +1,22 @@
 <template>
   <Teleport to="#toolbar">
+    <!-- the timeline shows the TMIs as they were at the selected time, or live at its end -->
+    <div class="d-flex align-center flex-grow-1 mx-2" style="min-width: 200px">
+      <v-slider v-model="sliderTime" :min="timeRange.min" :max="timeRange.max" :step="TIME_STEP" :disabled="timeRange.max <= timeRange.min" hide-details density="compact" color="primary" class="flex-grow-1" title="Show the TMIs as they were at this time" />
+      <v-chip label size="small" class="ml-3 text-no-wrap" prepend-icon="mdi-clock-outline" :color="selectedTime === undefined ? 'success' : undefined" :title="selectedTime === undefined ? 'The latest state of the TMIs is shown' : 'The TMIs are shown as they were at this time'">
+        {{ selectedTime === undefined ? 'Live' : formatTafTime(selectedTime, store.timeSource) }}
+      </v-chip>
+      <v-btn icon size="small" variant="text" :disabled="selectedTime === undefined" title="Show the latest state of the TMIs (live)" @click="selectedTime = undefined">
+        <v-icon icon="mdi-skip-forward" />
+      </v-btn>
+    </div>
+
     <faceted-search v-model="filteredItems" :columns="headers" :items="items" sync-to-query v-model:sort-by="sortBy" :defaults="{}" />
 
     <v-btn icon title="Refresh" size="small" @click="store.fetchTrustModelInstances()" variant="text">
       <v-icon icon="mdi-reload" />
     </v-btn>
   </Teleport>
-
-  <!-- the timeline shows the TMIs as they were at the selected time, or live at its end -->
-  <div class="d-flex align-center px-4" :style="{ height: `${TIMELINE_HEIGHT}px` }">
-    <v-slider v-model="sliderTime" :min="timeRange.min" :max="timeRange.max" :step="TIME_STEP" :disabled="timeRange.max <= timeRange.min" hide-details color="primary" class="flex-grow-1" title="Show the TMIs as they were at this time" />
-    <v-chip label class="ml-4 text-no-wrap" prepend-icon="mdi-clock-outline" :color="selectedTime === undefined ? 'success' : undefined" :title="selectedTime === undefined ? 'The latest state of the TMIs is shown' : 'The TMIs are shown as they were at this time'">
-      {{ selectedTime === undefined ? 'Live' : formatTafTime(selectedTime, store.timeSource) }}
-    </v-chip>
-    <v-btn class="ml-2" size="small" variant="text" prepend-icon="mdi-skip-forward" :disabled="selectedTime === undefined" title="Show the latest state of the TMIs" @click="selectedTime = undefined">Live</v-btn>
-  </div>
 
   <v-data-table-virtual :headers="headers" :items="filteredItems" :height="height" v-resize="onResize" multi-sort v-model:sort-by="sortBy" fixed-header @click:row="openTMI">
     <template #[`item.client`]="{ item }">
@@ -123,8 +125,7 @@ function decisionSummaryText(count: number, decision: TrustDecision): string {
   return `${count} ${count === 1 ? 'version' : 'versions'} led to a${decision === 'UNDECIDABLE' ? 'n' : ''} ${TRUST_DECISION_LABELS[decision]} trust decision`;
 }
 
-// height of the timeline above the table in pixels; times are selected in steps of 1 ms (in nanoseconds)
-const TIMELINE_HEIGHT = 56;
+// times are selected in steps of 1 ms (in nanoseconds)
 const TIME_STEP = 1e6;
 
 /*
@@ -173,10 +174,10 @@ watch(selectedTime, (time) => {
 
 const items = computed(() => selectedTime.value === undefined ? Object.values(store.trustModelInstances) : timedItems.value);
 
-const height = ref(document.body.clientHeight - 48 - TIMELINE_HEIGHT);
+const height = ref(document.body.clientHeight - 48);
 
 function onResize() {
-  height.value = document.body.clientHeight - 48 - TIMELINE_HEIGHT;
+  height.value = document.body.clientHeight - 48;
 }
 
 // at a selected time, a TMI opens with its version at that time

@@ -25,7 +25,7 @@
         {{ connectionState }}
       </v-chip>
 
-      <v-spacer />
+      <!-- takes the free space, so that pages can grow their toolbar content (e.g., the timeline of the TMI overview) -->
       <div id="toolbar" class="d-flex flex-grow-1 justify-end">
       </div>
 
