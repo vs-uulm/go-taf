@@ -1,12 +1,16 @@
 <template>
-  <v-network-graph :zoom-level="props.zoomLevel || 2" :nodes="graph.nodes" :edges="graph.edges" :layouts="graph.layouts" :layers="graph.layers" :configs="configs" :style="{ filter: theme.global.current.value.dark ? 'invert(1)' : null }">
+  <v-network-graph :zoom-level="props.zoomLevel || 2" :nodes="graph.nodes" :edges="graph.edges" :layouts="graph.layouts" :layers="graph.layers" :configs="configs" :style="{ filter: theme.global.current.value.dark ? 'invert(1)' : null }" @pointerleave.passive="hoveredLabels.clear()">
     <template #override-node="{ scale, nodeId, config }">
       <polygon :fill="config.color" :stroke="config.strokeColor" :stroke-width="2 * scale" :points="`0,${config.height * scale} -${config.width * (Math.max(5, String(nodeId).length) / 8) * scale},0 0,-${config.height * scale} ${config.width * (Math.max(5, String(nodeId).length) / 8) * scale},0`"></polygon>
     </template>
-    <template #edge-label="{ edge, hovered, area, scale }">
-      <g :style="`transform: translate(${(area.source.above.x + area.target.above.x) / 2 - (Math.max(edge.source.length, edge.target.length) * 7 + 28) / 2 * scale}px, ${(area.source.above.y + area.target.above.y) / 2 + -10 * scale}px);z-index:999;`" @pointerenter.passive="handleNodePointerEvent(true, $event)" @pointerleave.passive="handleNodePointerEvent(false, $event)">
-        <rect v-if="!hovered && alwaysShowOpinions" :width="(Math.max(alwaysShowOpinions ? 90 : 25, Math.max(edge.source.length, edge.target.length) * 7 + 28)) * scale" :height="(alwaysShowOpinions ? 45 : 32) * scale" :rx="5 * scale" :ry="5 * scale" :style="`fill: #ebeef0; stroke: #dfe3e6; stroke-width: ${2 * scale}px`" />
-        <template v-else-if="hovered">
+    <!--
+      the expanded label covers its edge, so it stays expanded while the pointer is on the edge or on the label itself;
+      otherwise covering the edge would end its hover, collapse the label, and uncover the edge again
+    -->
+    <template #edge-label="{ edge, edgeId, hovered: edgeHovered, area, scale }">
+      <g :style="`transform: translate(${(area.source.above.x + area.target.above.x) / 2 - (Math.max(edge.source.length, edge.target.length) * 7 + 28) / 2 * scale}px, ${(area.source.above.y + area.target.above.y) / 2 + -10 * scale}px);z-index:999;`" @pointerenter.passive="hoveredLabels.add(edgeId)" @pointerleave.passive="hoveredLabels.delete(edgeId)">
+        <rect v-if="!isExpanded(edgeId, edgeHovered) && alwaysShowOpinions" :width="(Math.max(alwaysShowOpinions ? 90 : 25, Math.max(edge.source.length, edge.target.length) * 7 + 28)) * scale" :height="(alwaysShowOpinions ? 45 : 32) * scale" :rx="5 * scale" :ry="5 * scale" :style="`fill: #ebeef0; stroke: #dfe3e6; stroke-width: ${2 * scale}px`" />
+        <template v-else-if="isExpanded(edgeId, edgeHovered)">
           <rect :width="Math.max(Math.max(edge.source.length, edge.target.length) * 7 + 28, 130) * scale" :height="100 * scale" :rx="5 * scale" :ry="5 * scale" :style="`fill: #e0e6f7; stroke: #3355bb; stroke-width: ${2 * scale}px`" />
           <text :x="18 * scale" :y="45 * scale" :font-size="`${12 * scale}px`">Belief</text>
           <text :x="18 * scale" :y="61 * scale" :font-size="`${12 * scale}px`">Disbelief</text>
@@ -17,12 +21,12 @@
           <text :x="98 * scale" :y="76 * scale" :font-size="`${12 * scale}px`">{{ edge.uncertainty.toFixed(2) }}</text>
           <text :x="98 * scale" :y="91 * scale" :font-size="`${12 * scale}px`">{{ edge.base_rate.toFixed(2) }}</text>
         </template>
-        <text v-if="!hovered && alwaysShowOpinions" :x="5 * scale" :y="40 * scale" :font-size="`${8 * scale}px`" font-family="monospace">
+        <text v-if="!isExpanded(edgeId, edgeHovered) && alwaysShowOpinions" :x="5 * scale" :y="40 * scale" :font-size="`${8 * scale}px`" font-family="monospace">
           [{{ edge.belief.toFixed(1) }} / {{ edge.disbelief.toFixed(1) }} / {{ edge.uncertainty.toFixed(1) }}]
         </text>
-        <text v-if="hovered || alwaysShowOpinions" font-style="italic" :x="5 * scale" :y="20 * scale" :font-size="`${16 * scale}px`">ω</text>
-        <text v-if="hovered || alwaysShowOpinions" font-style="italic" :x="23 * scale" :y="12 * scale" :font-size="`${12 * scale}px`">{{ edge.source }}</text>
-        <text v-if="hovered || alwaysShowOpinions" font-style="italic" :x="23 * scale" :y="28 * scale" :font-size="`${12 * scale}px`">{{ edge.target }}</text>
+        <text v-if="isExpanded(edgeId, edgeHovered) || alwaysShowOpinions" font-style="italic" :x="5 * scale" :y="20 * scale" :font-size="`${16 * scale}px`">ω</text>
+        <text v-if="isExpanded(edgeId, edgeHovered) || alwaysShowOpinions" font-style="italic" :x="23 * scale" :y="12 * scale" :font-size="`${12 * scale}px`">{{ edge.source }}</text>
+        <text v-if="isExpanded(edgeId, edgeHovered) || alwaysShowOpinions" font-style="italic" :x="23 * scale" :y="28 * scale" :font-size="`${12 * scale}px`">{{ edge.target }}</text>
       </g>
     </template>
   </v-network-graph>
@@ -31,7 +35,7 @@
 <script lang='ts' setup>
 import ColorHash from 'color-hash';
 import { useTheme } from 'vuetify';
-import { computed } from 'vue';
+import { computed, reactive } from 'vue';
 
 const props = defineProps<{
   panEnabled?: boolean,
@@ -156,10 +160,11 @@ const configs = vNG.defineConfigs({
   },
 });
 
-function handleNodePointerEvent(hover: boolean, event: PointerEvent) {
-  const state = (event.target as any)?.__vueParentComponent?.props?.state;
-  if (state) {
-    state.hovered = hover;
-  }
+// edges whose label is under the pointer; cleared when the pointer leaves the graph, in case a label is removed while
+// it is hovered (e.g., when the shown state changes), which does not emit pointerleave
+const hoveredLabels = reactive(new Set<string>());
+
+function isExpanded(edgeId: string, edgeHovered: boolean): boolean {
+  return edgeHovered || hoveredLabels.has(edgeId);
 }
 </script>
