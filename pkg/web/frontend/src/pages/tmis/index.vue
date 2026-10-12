@@ -19,7 +19,7 @@
     </v-btn>
   </Teleport>
 
-  <v-data-table-virtual :headers="headers" :items="filteredItems" :height="height" v-resize="onResize" multi-sort v-model:sort-by="sortBy" fixed-header @click:row="openTMI">
+  <v-data-table-virtual :headers="headers" :items="filteredItems" :height="height" v-resize="onResize" multi-sort v-model:sort-by="sortBy" fixed-header :row-props="stripedRow" @click:row="openTMI">
     <template #[`item.client`]="{ item }">
       <code class="mt-1">{{ item.client }}</code>
     </template>
@@ -56,6 +56,11 @@
 </template>
 
 <style>
+/* the shading of Vuetify's striped tables, see stripedRow */
+.tmi-row--odd {
+  background-image: linear-gradient(0deg, rgba(var(--v-border-color), var(--v-hover-opacity)), rgba(var(--v-border-color), var(--v-hover-opacity)));
+}
+
 .timeline-slider .v-slider-track__background {
   background: var(--timeline-track) !important;
   opacity: 1 !important;
@@ -266,6 +271,15 @@ const height = ref(document.body.clientHeight - 48);
 
 function onResize() {
   height.value = document.body.clientHeight - 48;
+}
+
+/*
+stripedRow shades every other row. Vuetify's striped option selects the rendered rows with :nth-child, but the virtual
+table only renders the visible rows, so the stripes would swap while scrolling; the index passed here is the position in
+the sorted and filtered list instead.
+*/
+function stripedRow({ index }: { index: number }) {
+  return index % 2 === 1 ? { class: 'tmi-row--odd' } : {};
 }
 
 // at a selected time, a TMI opens with its version at that time
