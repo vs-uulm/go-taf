@@ -11,6 +11,8 @@ export type TrustModelInstance = {
   template: string,
   active: boolean,
   latestVersion: number,
+  // time of the latest update (or of the spawn) in nanoseconds, see formatTafTime
+  latestUpdateTime?: number,
   // number of versions whose ATL result set contains each trust decision
   decisionCounts: DecisionCounts,
   // trust decisions per version (index = version, bit 1 << TdResults value per decision, 0 without ATLs), only for
@@ -324,6 +326,7 @@ export const useAppStore = defineStore('app', {
             template: parts[4],
             active: true,
             latestVersion: msg.Version,
+            latestUpdateTime: msg.Time,
             decisionCounts: emptyDecisionCounts(),
             updates: {},
             updateTimes: {},
@@ -425,6 +428,7 @@ export const useAppStore = defineStore('app', {
           const key = msg.FullTMI;
           if (this.trustModelInstances[key]) {
             this.trustModelInstances[key].latestVersion = Math.max(this.trustModelInstances[key].latestVersion, msg.Version);
+            this.trustModelInstances[key].latestUpdateTime = Math.max(this.trustModelInstances[key].latestUpdateTime ?? msg.Time, msg.Time);
             if (!this.isLive(key)) {
               break;
             }
@@ -606,6 +610,7 @@ export const useAppStore = defineStore('app', {
           template: entry.template,
           active: entry.active,
           latestVersion: entry.latestVersion,
+          latestUpdateTime: entry.latestUpdateTime,
           decisionCounts: entry.decisionCounts ?? emptyDecisionCounts(),
           states: existing?.states || {},
           updates: existing?.updates || {},

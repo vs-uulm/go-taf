@@ -73,10 +73,12 @@ type tmiMetaState struct {
 	// decisionBit); DecisionCounts counts the versions whose result set contains each decision.
 	Decisions      map[int]uint8
 	DecisionCounts map[core.TrustDecision]int
-	// UpdateTimes holds the time of each update in Update (same index), SpawnTime the time of version 0, both in
-	// nanoseconds as given by package clock (simulated time in simulation builds, Unix time otherwise).
-	UpdateTimes map[int][]int64
-	SpawnTime   int64
+	// UpdateTimes holds the time of each update in Update (same index), SpawnTime the time of version 0, and
+	// LatestUpdateTime the latest of all these times, all in nanoseconds as given by package clock (simulated time in
+	// simulation builds, Unix time otherwise).
+	UpdateTimes      map[int][]int64
+	SpawnTime        int64
+	LatestUpdateTime int64
 }
 
 // trustDecisions lists all trust decisions with their names in the TMI overview.
@@ -300,6 +302,7 @@ func (s *State) handleTMISpawned(event listener.TrustModelInstanceSpawnedEvent) 
 		Decisions:      make(map[int]uint8),
 		DecisionCounts: make(map[core.TrustDecision]int),
 	}
+	s.tmis[fullTMI].LatestUpdateTime = event.Time
 	return nil
 }
 
@@ -326,6 +329,7 @@ func (s *State) handleTMIUpdated(event listener.TrustModelInstanceUpdatedEvent) 
 		s.mutex.Lock()
 		tmi.Update[event.Version+1] = []json.RawMessage{update}
 		tmi.UpdateTimes[event.Version+1] = []int64{event.Time}
+		tmi.LatestUpdateTime = max(tmi.LatestUpdateTime, event.Time)
 		s.mutex.Unlock()
 		return nil
 	}
@@ -346,6 +350,7 @@ func (s *State) handleTMIUpdated(event listener.TrustModelInstanceUpdatedEvent) 
 	tmi.States[event.Version] = state
 	tmi.Update[event.Version] = append(tmi.Update[event.Version], update)
 	tmi.UpdateTimes[event.Version] = append(tmi.UpdateTimes[event.Version], event.Time)
+	tmi.LatestUpdateTime = max(tmi.LatestUpdateTime, event.Time)
 	tmi.LatestVersion = event.Version
 	return nil
 }
@@ -720,12 +725,14 @@ func (s *State) getAllTMIs(ctx *gin.Context) {
 		LatestVersion int    `json:"latestVersion"`
 		// number of versions whose ATL result set contains each trust decision
 		DecisionCounts map[string]int `json:"decisionCounts"`
+		// time of the latest update (or of the spawn), see tmiMetaState.LatestUpdateTime
+		LatestUpdateTime int64 `json:"latestUpdateTime"`
 	}
 
 	s.mutex.RLock()
 	tmis := make(map[string]tmiSummary, len(s.tmis))
 	for fullTMI, tmi := range s.tmis {
-		tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, tmi.IsActive, tmi.Template, tmi.LatestVersion, tmi.decisionCountsByName()}
+		tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, tmi.IsActive, tmi.Template, tmi.LatestVersion, tmi.decisionCountsByName(), tmi.LatestUpdateTime}
 	}
 	s.mutex.RUnlock()
 	ctx.JSON(http.StatusOK, tmis)

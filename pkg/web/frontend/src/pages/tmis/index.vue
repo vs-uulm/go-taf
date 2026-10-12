@@ -20,6 +20,9 @@
     <template #[`item.active`]="{ item }">
       <v-checkbox-btn v-model="item.active" readonly />
     </template>
+    <template #[`item.latestUpdateTime`]="{ item }">
+      <span class="text-no-wrap">{{ formatTafTime(item.latestUpdateTime, store.timeSource) }}</span>
+    </template>
     <template #[`item.decisionSummary`]="{ item }">
       <!-- a split label: one segment per trust decision, in the colors of the version timeline -->
       <span class="decision-summary">
@@ -54,7 +57,7 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
+import { formatTafTime, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
 import { Column, SortItem } from '@/types';
 
 const filteredItems = ref<any[]>([]);
@@ -88,6 +91,11 @@ const headers: Column[] = [{
   filterable: true,
   title: 'Latest Version',
   key: 'latestVersion'
+}, {
+  // time of the latest update (or of the spawn), sorted by its value in nanoseconds
+  filterable: false,
+  title: 'Time of Latest Update',
+  key: 'latestUpdateTime'
 }, {
   // number of versions whose ATL result set contains each trust decision; sorted by the negative decisions first
   filterable: false,
