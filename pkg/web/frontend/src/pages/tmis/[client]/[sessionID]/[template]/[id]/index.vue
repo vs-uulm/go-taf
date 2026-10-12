@@ -25,6 +25,9 @@
         Version
         <v-chip class="ml-1 font-weight-bold">{{ item.version }}</v-chip>
       </v-chip>
+      <div>
+        <v-chip v-if="item.time !== undefined" label class="mt-2 text-no-wrap" prepend-icon="mdi-clock-outline" :title="item.version === 0 ? 'Time of the spawn' : 'Time of the latest update of this version'">{{ formatTafTime(item.time, store.timeSource) }}</v-chip>
+      </div>
     </template>
     <template #[`item.updates`]="{ item }">
       <!-- spacing is set explicitly, as Vuetify 4 no longer resets the browser's default margins and paddings -->
@@ -220,8 +223,20 @@ function stringifyUpdate(update: any): string {
   return str;
 }
 
+/*
+versionTime returns the time of a version: the time of its latest update (the state of a version results from all of
+its updates), or the time of the spawn for version 0.
+*/
+function versionTime(version: number, updateTimes: number[] | undefined): number | undefined {
+  if (updateTimes?.length) {
+    return Math.max(...updateTimes);
+  }
+  return version === 0 ? trustModelInstance.value?.spawnTime : undefined;
+}
+
 const items = computed(() => Object.entries(trustModelInstance.value?.states || {}).map(([k, v]) => ({
   version: Number(k),
+  time: versionTime(Number(k), trustModelInstance.value?.updateTimes?.[k]),
   updates: trustModelInstance.value?.updates?.[k]?.map?.(stringifyUpdate),
   updateTimes: trustModelInstance.value?.updateTimes?.[k],
   atls: trustModelInstance.value?.atls?.[k],

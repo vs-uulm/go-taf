@@ -11,7 +11,7 @@
       <div class="d-flex ga-1 mr-2">
         <v-chip v-for="d in LEGEND" :key="d" size="x-small" label variant="flat" :color="TRUST_DECISION_COLORS[d]">{{ TRUST_DECISION_LABELS[d] }}</v-chip>
       </div>
-      <v-chip class="mr-2" :title="version === 0 ? 'Time of the spawn' : 'Time of the update leading to this version'">{{ formatTafTime(versionTime, store.timeSource) }}</v-chip>
+      <v-chip class="mr-2" :title="version === 0 ? 'Time of the spawn' : 'Time of the latest update of this version'">{{ formatTafTime(versionTime, store.timeSource) }}</v-chip>
       <v-chip class="pr-0">
         Version
         <v-chip class="ml-2 font-weight-bold">{{ version }}</v-chip>
@@ -59,12 +59,13 @@ watch(() => route.params.version, () => loadVersion());
 
 const state = computed(() => trustModelInstance.value?.states?.[version.value]);
 
-// the time of a version is the time of its (last) update, or the time of the spawn for version 0
+// the time of a version is the time of its latest update, or the time of the spawn for version 0
 const versionTime = computed(() => {
-  if (version.value === 0) {
-    return trustModelInstance.value?.spawnTime;
+  const updateTimes = trustModelInstance.value?.updateTimes?.[version.value];
+  if (updateTimes?.length) {
+    return Math.max(...updateTimes);
   }
-  return trustModelInstance.value?.updateTimes?.[version.value]?.at(-1);
+  return version.value === 0 ? trustModelInstance.value?.spawnTime : undefined;
 });
 
 // color of a version on the track: a negative decision dominates, versions without ATLs stay neutral
