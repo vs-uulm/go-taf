@@ -2,7 +2,8 @@
   <Teleport to="#toolbar">
     <!-- the timeline shows the TMIs as they were at the selected time, or live at its end -->
     <div class="d-flex align-center flex-grow-1 mx-2" style="min-width: 200px">
-      <v-slider v-model="sliderTime" :min="timeRange.min" :max="timeRange.max" :step="TIME_STEP" :disabled="timeRange.max <= timeRange.min" hide-details density="compact" color="primary" class="flex-grow-1" title="Show the TMIs as they were at this time" />
+      <!-- the track is colored by the trust decisions of all TMIs over time, its fill is hidden so that they stay visible -->
+      <v-slider v-model="sliderTime" :min="timeRange.min" :max="timeRange.max" :step="TIME_STEP" :disabled="timeRange.max <= timeRange.min" hide-details density="compact" color="primary" track-size="6" track-fill-color="transparent" class="flex-grow-1 timeline-slider" :style="{ '--timeline-track': timelineTrack }" title="Show the TMIs as they were at this time (red: a TMI was not trustworthy, green: all decided TMIs were trustworthy, grey: undecidable only)" />
       <v-chip label size="small" class="ml-3 text-no-wrap" prepend-icon="mdi-clock-outline" :color="selectedTime === undefined ? 'success' : undefined" :title="selectedTime === undefined ? 'The latest state of the TMIs is shown' : 'The TMIs are shown as they were at this time'">
         {{ selectedTime === undefined ? 'Live' : formatTafTime(selectedTime, store.timeSource) }}
       </v-chip>
@@ -48,6 +49,11 @@
 </template>
 
 <style>
+.timeline-slider .v-slider-track__background {
+  background: var(--timeline-track) !important;
+  opacity: 1 !important;
+}
+
 .decision-summary {
   display: inline-flex;
   border-radius: 4px;
@@ -65,10 +71,10 @@
 </style>
 
 <script lang="ts" setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { formatTafTime, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
+import { formatTafTime, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
 import { Column, SortItem } from '@/types';
 
 const filteredItems = ref<any[]>([]);
@@ -170,6 +176,61 @@ watch(selectedTime, (time) => {
       timedItems.value = tmis;
     }
   }, 150);
+});
+
+/*
+The track of the timeline shows the trust decisions of all TMIs over time like the timeline of the visualizer: red while
+the current version of any TMI was not trustworthy (which makes the client distrust), green while all decided ones were
+trustworthy, grey while there were only undecidable ones. It is fetched again at most once per second while new versions
+arrive.
+*/
+const decisionTimeline = ref<{ time: number, decisions: number }[]>([]);
+const TIMELINE_REFRESH_MS = 1000;
+let timelineTimer: ReturnType<typeof setTimeout> | undefined;
+let lastTimelineFetch = 0;
+
+async function fetchDecisionTimeline() {
+  lastTimelineFetch = Date.now();
+  decisionTimeline.value = await store.fetchDecisionTimeline();
+}
+
+watch(() => timeRange.value.max, () => {
+  if (timelineTimer !== undefined) {
+    return;
+  }
+  timelineTimer = setTimeout(async () => {
+    timelineTimer = undefined;
+    await fetchDecisionTimeline();
+  }, Math.max(0, lastTimelineFetch + TIMELINE_REFRESH_MS - Date.now()));
+}, { immediate: true });
+onUnmounted(() => clearTimeout(timelineTimer));
+
+const NEUTRAL_TRACK_COLOR = 'rgba(var(--v-theme-on-surface), 0.12)';
+
+function timelineColor(bits: number): string {
+  const has = (d: TrustDecision) => (bits & (1 << TRUST_DECISIONS.indexOf(d))) !== 0;
+  for (const d of ['NOT_TRUSTWORTHY', 'TRUSTWORTHY', 'UNDECIDABLE'] as TrustDecision[]) {
+    if (has(d)) {
+      return TRUST_DECISION_CSS_COLORS[d];
+    }
+  }
+  return NEUTRAL_TRACK_COLOR;
+}
+
+// a CSS gradient with a hard-edged segment per change of the color
+const timelineTrack = computed(() => {
+  const { min, max } = timeRange.value;
+  const segments = decisionTimeline.value;
+  if (max <= min || !segments.length) {
+    return NEUTRAL_TRACK_COLOR;
+  }
+  const position = (t: number) => `${Math.min(100, Math.max(0, (t - min) / (max - min) * 100))}%`;
+  const stops: string[] = [`${NEUTRAL_TRACK_COLOR} 0%`, `${NEUTRAL_TRACK_COLOR} ${position(segments[0].time)}`];
+  segments.forEach((segment, i) => {
+    const color = timelineColor(segment.decisions);
+    stops.push(`${color} ${position(segment.time)}`, `${color} ${position(segments[i + 1]?.time ?? max)}`);
+  });
+  return `linear-gradient(to right, ${stops.join(', ')})`;
 });
 
 const items = computed(() => selectedTime.value === undefined ? Object.values(store.trustModelInstances) : timedItems.value);

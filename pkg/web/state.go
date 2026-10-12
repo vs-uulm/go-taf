@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"encoding/json"
 	"log/slog"
 	"maps"
@@ -812,4 +813,77 @@ func (s *State) getAllTMIs(ctx *gin.Context) {
 	}
 	s.mutex.RUnlock()
 	ctx.JSON(http.StatusOK, tmis)
+}
+
+/*
+getDecisionTimeline returns how the trust decisions of all TMIs together changed over time, as segments in ascending
+order, each with its start time (in nanoseconds, see package clock) and the trust decisions contained in the current
+versions of all TMIs active at that time (bit 1<<d per core.TrustDecision d, as in getTMIDecisions). A version without
+ATLs keeps the decisions of the previous version of its TMI, and deleted TMIs no longer count.
+*/
+func (s *State) getDecisionTimeline(ctx *gin.Context) {
+	type change struct {
+		time int64
+		tmi  int
+		bits uint8
+	}
+
+	s.mutex.RLock()
+	changes := make([]change, 0)
+	tmiCount := 0
+	for _, tmi := range s.tmis {
+		var bits uint8
+		for _, version := range slices.Sorted(maps.Keys(tmi.States)) {
+			time, ok := tmi.versionTime(version)
+			if !ok {
+				continue
+			}
+			if tmi.Decisions[version] != 0 {
+				bits = tmi.Decisions[version]
+			}
+			changes = append(changes, change{time, tmiCount, bits})
+		}
+		if !tmi.IsActive {
+			changes = append(changes, change{tmi.DeleteTime, tmiCount, 0})
+		}
+		tmiCount++
+	}
+	s.mutex.RUnlock()
+
+	// stable, so that the changes of a TMI at the same time are applied in the order of its versions
+	slices.SortStableFunc(changes, func(a, b change) int { return cmp.Compare(a.time, b.time) })
+
+	type segment struct {
+		Time      int64 `json:"time"`
+		Decisions int   `json:"decisions"`
+	}
+	segments := make([]segment, 0)
+	current := make([]uint8, tmiCount)
+	// number of TMIs whose current version contains each decision bit
+	var counts [8]int
+	for i := 0; i < len(changes); {
+		time := changes[i].time
+		for ; i < len(changes) && changes[i].time == time; i++ {
+			c := changes[i]
+			for bit := range counts {
+				if current[c.tmi]&(1<<bit) != 0 {
+					counts[bit]--
+				}
+				if c.bits&(1<<bit) != 0 {
+					counts[bit]++
+				}
+			}
+			current[c.tmi] = c.bits
+		}
+		decisions := 0
+		for bit, count := range counts {
+			if count > 0 {
+				decisions |= 1 << bit
+			}
+		}
+		if len(segments) == 0 || segments[len(segments)-1].Decisions != decisions {
+			segments = append(segments, segment{time, decisions})
+		}
+	}
+	ctx.JSON(http.StatusOK, gin.H{"segments": segments})
 }

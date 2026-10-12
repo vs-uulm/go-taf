@@ -624,6 +624,16 @@ export const useAppStore = defineStore('app', {
       });
     },
 
+    /*
+      fetchDecisionTimeline fetches how the trust decisions of all TMIs together changed over time: segments with their
+      start time (in nanoseconds) and the decisions of the current versions of all active TMIs (bit 1 << TdResults value
+      per decision).
+    */
+    async fetchDecisionTimeline(): Promise<{ time: number, decisions: number }[]> {
+      const req = await axios.get('/api/timeline');
+      return req.data.segments ?? [];
+    },
+
     async fetchTrustModelInstances() {
       const req = await axios.get('/api/tmis');
       // update metadata only, so that already fetched states of watched TMIs are kept

@@ -84,6 +84,7 @@ func (s *Webserver) Run() {
 	s.router.GET("/api/info", s.getInfo)
 	s.router.GET("/api/sessions", s.state.getSessions)
 	s.router.GET("/api/tmis/", s.state.getAllTMIs)
+	s.router.GET("/api/timeline", s.state.getDecisionTimeline)
 	s.router.GET("/api/tmis/:client/:session/:tmt/:tmiID", s.state.getTMI)
 	s.router.GET("/api/tmis/:client/:session/:tmt/:tmiID/latest", s.state.getTMILatest)
 	s.router.GET("/api/tmis/:client/:session/:tmt/:tmiID/updates", s.state.getTMIUpdates)
