@@ -13,6 +13,10 @@ export type TrustModelInstance = {
   latestVersion: number,
   // time of the latest update (or of the spawn) in nanoseconds, see formatTafTime
   latestUpdateTime?: number,
+  // trust decisions of the latest version (bit 1 << TdResults value per decision), or of the closest earlier version with
+  // ATLs if it has none yet, and the version they belong to (-1 if none)
+  latestDecisions?: number,
+  latestDecisionsVersion?: number,
   // number of versions whose ATL result set contains each trust decision
   decisionCounts: DecisionCounts,
   // trust decisions per version (index = version, bit 1 << TdResults value per decision, 0 without ATLs), only for
@@ -370,9 +374,14 @@ export const useAppStore = defineStore('app', {
             decisions.forEach((d) => counts[d]++);
             lastCountedDecisions.set(key, { version: msg.NewATLs.Version, decisions });
 
+            const bits = [...decisions].reduce((bits, d) => bits | (1 << TRUST_DECISIONS.indexOf(d)), 0);
             const byVersion = this.trustModelInstances[key].decisionsByVersion;
             if (byVersion && this.isWatched(key)) {
-              byVersion[msg.NewATLs.Version] = [...decisions].reduce((bits, d) => bits | (1 << TRUST_DECISIONS.indexOf(d)), 0);
+              byVersion[msg.NewATLs.Version] = bits;
+            }
+            if (bits !== 0 && msg.NewATLs.Version >= (this.trustModelInstances[key].latestDecisionsVersion ?? -1)) {
+              this.trustModelInstances[key].latestDecisions = bits;
+              this.trustModelInstances[key].latestDecisionsVersion = msg.NewATLs.Version;
             }
           }
           if (this.trustModelInstances[key] && this.isLive(key) && this.trustModelInstances[key].states[msg.NewATLs.Version]) {
@@ -614,6 +623,8 @@ export const useAppStore = defineStore('app', {
           active: entry.active,
           latestVersion: entry.latestVersion,
           latestUpdateTime: entry.latestUpdateTime,
+          latestDecisions: entry.latestDecisions,
+          latestDecisionsVersion: entry.latestDecisionsVersion,
           spawnTime: entry.spawnTime,
           decisionCounts: entry.decisionCounts ?? emptyDecisionCounts(),
           states: {},
@@ -650,6 +661,8 @@ export const useAppStore = defineStore('app', {
           active: entry.active,
           latestVersion: entry.latestVersion,
           latestUpdateTime: entry.latestUpdateTime,
+          latestDecisions: entry.latestDecisions,
+          latestDecisionsVersion: entry.latestDecisionsVersion,
           decisionCounts: entry.decisionCounts ?? emptyDecisionCounts(),
           states: existing?.states || {},
           updates: existing?.updates || {},

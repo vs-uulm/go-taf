@@ -35,6 +35,13 @@
     <template #[`item.latestUpdateTime`]="{ item }">
       <span class="text-no-wrap">{{ formatTafTime(item.latestUpdateTime, store.timeSource) }}</span>
     </template>
+    <template #[`item.latestDecisions`]="{ item }">
+      <!-- the same chips as for the trust decisions of the ATLs on the TMI page -->
+      <template v-if="item.latestDecisions">
+        <v-chip v-for="d in decisionsOf(item.latestDecisions)" :key="d" size="x-small" label class="mr-1" :color="TRUST_DECISION_COLORS[d]" variant="flat" :title="item.latestDecisionsVersion === item.latestVersion ? `Trust decision of version ${item.latestVersion}` : `Trust decision of version ${item.latestDecisionsVersion}, as version ${item.latestVersion} has none yet`">{{ TRUST_DECISION_LABELS[d] }}</v-chip>
+      </template>
+      <span v-else class="text-medium-emphasis">-</span>
+    </template>
     <template #[`item.decisionSummary`]="{ item }">
       <!-- a split label: one segment per trust decision, in the colors of the version timeline -->
       <span class="decision-summary">
@@ -74,7 +81,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { formatTafTime, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
+import { formatTafTime, TRUST_DECISION_COLORS, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
 import { Column, SortItem } from '@/types';
 
 const filteredItems = ref<any[]>([]);
@@ -82,6 +89,19 @@ const sortBy = ref<SortItem[]>([]);
 
 const router = useRouter();
 const store = useAppStore();
+
+// the trust decisions contained in decision bits (1 << TdResults value per decision), in the order of the legend
+function decisionsOf(bits: number | undefined): TrustDecision[] {
+  return (['TRUSTWORTHY', 'NOT_TRUSTWORTHY', 'UNDECIDABLE'] as TrustDecision[]).filter(d => ((bits ?? 0) & (1 << TRUST_DECISIONS.indexOf(d))) !== 0);
+}
+
+// sort rank of decision bits: not trustworthy first, then undecidable, trustworthy, and none
+function decisionRank(bits: number | undefined): number {
+  const decisions = decisionsOf(bits);
+  const rank = (['NOT_TRUSTWORTHY', 'UNDECIDABLE', 'TRUSTWORTHY'] as TrustDecision[]).findIndex(d => decisions.includes(d));
+  return rank === -1 ? 3 : rank;
+}
+
 const headers: Column[] = [{
   maxWidth: '100px',
   filterable: true,
@@ -113,6 +133,13 @@ const headers: Column[] = [{
   filterable: false,
   title: 'Time of Latest Update',
   key: 'latestUpdateTime'
+}, {
+  // trust decisions of the shown version; sorted by the most negative decision (not filterable, as the search matches
+  // substrings and TRUSTWORTHY is one of NOT_TRUSTWORTHY)
+  filterable: false,
+  title: 'Latest Decision',
+  key: 'latestDecisions',
+  sortRaw: (a: TrustModelInstance, b: TrustModelInstance) => decisionRank(a.latestDecisions) - decisionRank(b.latestDecisions)
 }, {
   // number of versions whose ATL result set contains each trust decision; sorted by the negative decisions first
   filterable: false,
