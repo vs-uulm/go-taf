@@ -8,7 +8,8 @@
         </router-link>
       </span>
 
-      <v-btn-toggle class="ml-4">
+      <!-- the buttons are transparent on the toolbar and only the page shown is highlighted (see nav-toggle below) -->
+      <v-btn-toggle class="ml-4 nav-toggle" variant="text">
           <v-btn to="/tmis" title="TMIs">
             <v-icon start>mdi-rhombus-outline</v-icon>
             <span class="hidden-sm-and-down">TMIs</span>
@@ -39,6 +40,17 @@
     </v-main>
   </v-app>
 </template>
+
+<style>
+/* the button of the page shown stands out from the toolbar like a selected tab, without the default darker overlay */
+.nav-toggle .v-btn--active {
+  background: rgb(var(--v-theme-surface));
+}
+
+.nav-toggle .v-btn--active > .v-btn__overlay {
+  opacity: 0;
+}
+</style>
 
 <script lang="ts" setup>
 import { useTheme } from 'vuetify';
