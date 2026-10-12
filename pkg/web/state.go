@@ -756,7 +756,8 @@ func versionResponse(tmi tmiMetaState, version int) gin.H {
 /*
 getTMIDecisions returns the trust decisions of all versions of a TMI as one number per version (index = version), with
 bit 1<<d set for every trust decision d (core.TrustDecision) in the version's ATL result set and 0 for versions without
-one, e.g., for coloring a timeline of the versions.
+one, e.g., for coloring a timeline of the versions. It also returns the time of each version (see versionTime, null if
+unknown).
 */
 func (s *State) getTMIDecisions(ctx *gin.Context) {
 	tmi, exists := s.tmi(ctx)
@@ -775,9 +776,16 @@ func (s *State) getTMIDecisions(ctx *gin.Context) {
 			decisions[version] = int(bits)
 		}
 	}
+	times := make([]*int64, last+1)
+	for version := range times {
+		if time, ok := tmi.versionTime(version); ok {
+			times[version] = &time
+		}
+	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"latestVersion": tmi.LatestVersion,
 		"decisions":     decisions,
+		"times":         times,
 	})
 }
 

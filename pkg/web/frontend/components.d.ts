@@ -16,6 +16,7 @@ declare module 'vue' {
     LogOutput: typeof import('./src/components/LogOutput.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    TimelineSlider: typeof import('./src/components/TimelineSlider.vue')['default']
     TrustGraph: typeof import('./src/components/TrustGraph.vue')['default']
   }
 }

@@ -1,5 +1,8 @@
 <template>
   <Teleport to="#toolbar">
+    <!-- scrolls to the latest version at the selected time and greys out the newer ones, colored by the TMI's decisions -->
+    <timeline-slider v-model="selectedTime" :min="timeRange.min" :max="timeRange.max" :segments="decisionSegments" title="Scroll to the latest version at this time and grey out the newer ones" />
+
     <faceted-search v-model="filteredItems" :columns="searchColumns" :items="items" sync-to-query v-model:sort-by="sortBy" :defaults="{ sort: '-version' }" remote-search @update:search="onSearch" @update:remoteFilters="onRemoteFilters" />
 
     <v-chip v-if="searchTerm || decision" size="small" class="mx-1 align-self-center" label :title="`${items.length} of ${matches} versions matching the search are loaded`">{{ items.length }} / {{ matches }} matching versions</v-chip>
@@ -19,7 +22,7 @@
     versions are added at the top
   -->
   <!-- scroll does not bubble, so it is caught in the capture phase from the table's scroll container -->
-  <v-data-table-virtual :headers="headers" :items="filteredItems" item-value="version" :item-height="ROW_HEIGHT" :height="height" v-resize="onResize" v-model:sort-by="sortBy" @scroll.capture="onScroll">
+  <v-data-table-virtual ref="table" :headers="headers" :items="filteredItems" item-value="version" :item-height="ROW_HEIGHT" :height="height" v-resize="onResize" v-model:sort-by="sortBy" :row-props="versionRowProps" @scroll.capture="onScroll">
     <template #[`item.version`]="{ item }">
       <v-chip class="pr-0 mt-1 text-no-wrap" :to="`/tmis/${route.params.client as string}/${route.params.sessionID as string}/${route.params.template as string}/${route.params.id as string}/${item.version}`">
         Version
@@ -115,13 +118,20 @@
 .v-data-table__tr {
   vertical-align: top;
 }
+
+/* versions newer than the time selected with the timeline */
+.version--newer {
+  opacity: 0.38;
+}
 </style>
 
 <script lang='ts' setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { formatTafTime, TRUST_DECISION_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
+import TimelineSlider from '@/components/TimelineSlider.vue';
+import { useTimeQuery } from '@/composables/timeQuery';
+import { DecisionSegment, formatTafTime, TRUST_DECISION_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
 import { Column, SortItem } from '@/types';
 import router from '@/router';
 
@@ -188,6 +198,15 @@ const decision = ref('');
 const matches = ref(0);
 // incremented with each refresh, so that responses of outdated searches are discarded
 let generation = 0;
+
+// the time selected with the timeline (see scrollToSelectedTime), and whether the loaded versions were fetched for a
+// selected time, i.e., without live versions; declared before useWatchedTrustModelInstance, which calls refresh at once
+const selectedTime = useTimeQuery();
+let timedHistory = false;
+// no live versions for a time from the URL: the limit is handed to the store before refresh can clear it
+if (selectedTime.value !== undefined) {
+  historyLimit.value = undefined;
+}
 
 const trustModelInstance = useWatchedTrustModelInstance(route, refresh, () => historyLimit.value);
 
@@ -277,11 +296,27 @@ async function fetchVersions(before?: number): Promise<number> {
 async function refresh() {
   generation++;
   // while searching or filtering, the matching versions of the whole history are shown and no new versions are added
-  // live, as they may not match
-  historyLimit.value = searchTerm.value || decision.value ? undefined : PAGE_SIZE;
+  // live, as they may not match; neither while a time is selected, as they would shift the rows scrolled to
+  const wasTimed = timedHistory;
+  timedHistory = selectedTime.value !== undefined;
+  historyLimit.value = searchTerm.value || decision.value || timedHistory ? undefined : PAGE_SIZE;
   store.clearTrustModelInstanceHistory(`//${route.params.client}/${route.params.sessionID}/${route.params.template}/${route.params.id}`);
   exhaustedBelow.value = undefined;
   fetchedHasOlder.value = await fetchVersions() === PAGE_SIZE;
+  // the decisions and times of all versions for the timeline, kept up to date while the TMI is watched
+  await store.fetchTrustModelInstanceDecisions(
+    route.params.client as string,
+    route.params.sessionID as string,
+    route.params.template as string,
+    route.params.id as string
+  );
+  // the reloaded versions are scrolled to the selected time again (e.g., after a reconnect), or to the newest version
+  // when returning to live
+  if (timedHistory) {
+    scrollToSelectedTime();
+  } else if (wasTimed) {
+    table.value?.scrollToIndex(0);
+  }
 }
 
 async function loadOlder() {
@@ -354,4 +389,124 @@ function onRemoteFilters(filters: { [key: string]: string }) {
     refresh();
   }
 }
+
+/*
+The timeline selects a time (kept in the query parameter at, see useTimeQuery): the table scrolls to the latest version
+at that time, loading older versions if needed, and greys out the newer ones. Its track shows the decisions of the TMI
+over time (a version without ATLs keeps the decisions of the previous one).
+*/
+const table = ref<{ scrollToIndex: (index: number) => void, $el: HTMLElement } | null>(null);
+
+const timeRange = computed(() => {
+  const tmi = trustModelInstance.value;
+  const times = (tmi?.timesByVersion ?? []).filter((t): t is number => t !== null && t !== undefined);
+  const min = tmi?.spawnTime ?? (times.length ? Math.min(...times) : 0);
+  const max = Math.max(tmi?.latestUpdateTime ?? 0, ...times);
+  return { min, max: Math.max(min, max) };
+});
+
+const decisionSegments = computed(() => {
+  const decisions = trustModelInstance.value?.decisionsByVersion ?? [];
+  const times = trustModelInstance.value?.timesByVersion ?? [];
+  const segments: DecisionSegment[] = [];
+  let bits = 0;
+  times.forEach((time, version) => {
+    if (time === null || time === undefined) {
+      return;
+    }
+    bits = decisions[version] || bits;
+    if (!segments.length || segments[segments.length - 1].decisions !== bits) {
+      segments.push({ time, decisions: bits });
+    }
+  });
+  return segments;
+});
+
+function timeOfVersion(version: number, updateTimes: number[] | undefined): number | undefined {
+  return versionTime(version, updateTimes) ?? trustModelInstance.value?.timesByVersion?.[version] ?? undefined;
+}
+
+// rows carry their version, so that scrollToSelectedTime can find them
+function versionRowProps({ item }: { item: { version: number, updateTimes?: number[] } }) {
+  const time = timeOfVersion(item.version, item.updateTimes);
+  const newer = selectedTime.value !== undefined && time !== undefined && time > selectedTime.value;
+  return { 'data-version': item.version, class: newer ? 'version--newer' : undefined };
+}
+
+// the latest version whose time is not after the given time
+function versionAtTime(time: number): number | undefined {
+  let result: number | undefined;
+  (trustModelInstance.value?.timesByVersion ?? []).forEach((t, version) => {
+    if (t !== null && t !== undefined && t <= time) {
+      result = version;
+    }
+  });
+  return result;
+}
+
+/*
+scrollToSelectedTime loads older versions until the latest version at the selected time is loaded, and then scrolls to
+it, or to the closest older version shown if it does not match the search. It only scrolls if the table is sorted by
+version, as only then the position of a version is known.
+*/
+let scrollGeneration = 0;
+async function scrollToSelectedTime() {
+  const current = ++scrollGeneration;
+  const time = selectedTime.value;
+  const target = time === undefined ? undefined : versionAtTime(time);
+  if (target === undefined) {
+    return;
+  }
+  while ((oldestLoadedVersion.value ?? Infinity) > target && hasOlder.value && current === scrollGeneration) {
+    const before = oldestLoadedVersion.value;
+    await loadOlder();
+    if (oldestLoadedVersion.value === before) {
+      break;
+    }
+  }
+  await nextTick();
+  const sort = sortBy.value[0];
+  if (current !== scrollGeneration || sort?.key !== 'version') {
+    return;
+  }
+  const versions = filteredItems.value.map(item => item.version as number).sort((a, b) => sort.order === 'desc' ? b - a : a - b);
+  const shown = versions.filter(version => version <= target);
+  if (!shown.length) {
+    return;
+  }
+  const version = Math.max(...shown);
+  table.value?.scrollToIndex(versions.indexOf(version));
+  // the virtual table estimates the heights of rows it has not rendered yet, so it may miss the row by a few rows; once
+  // the row is rendered, it is scrolled to exactly (repeatedly, as rendering the rows around it corrects their heights)
+  for (let attempt = 0; attempt < 5 && current === scrollGeneration; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const row = table.value?.$el.querySelector<HTMLElement>(`tr[data-version="${version}"]`);
+    const container = table.value?.$el.querySelector<HTMLElement>('.v-table__wrapper');
+    if (!row || !container) {
+      continue;
+    }
+    const offset = row.getBoundingClientRect().top - container.getBoundingClientRect().top - (container.querySelector('thead')?.getBoundingClientRect().height ?? 0);
+    if (Math.abs(offset) < 2) {
+      break;
+    }
+    container.scrollTop += offset;
+  }
+}
+
+/*
+Scrolls when a time is selected, and once the times of the versions are known (e.g., for a time from the URL). Switching
+between a selected time and live reloads the versions instead, as live versions are only added without a selected time;
+refresh then scrolls.
+*/
+let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+watch([selectedTime, () => trustModelInstance.value?.timesByVersion !== undefined], () => {
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(() => {
+    if ((selectedTime.value !== undefined) !== timedHistory) {
+      refresh();
+    } else {
+      scrollToSelectedTime();
+    }
+  }, 200);
+});
 </script>

@@ -22,6 +22,8 @@ export type TrustModelInstance = {
   // trust decisions per version (index = version, bit 1 << TdResults value per decision, 0 without ATLs), only for
   // watched TMIs whose page fetched them
   decisionsByVersion?: number[],
+  // time of each version (index = version, in nanoseconds, null if unknown), fetched together with decisionsByVersion
+  timesByVersion?: (number | null)[],
   states: {[key: string]: TrustModelInstanceState},
   atls: {[key: string]: ActualTrustworthinessLevel},
   updates: {[key: string]: TrustModelInstanceUpdate},
@@ -54,6 +56,9 @@ export function formatTafTime(ns: number | undefined, source: TimeSource | undef
 export type TrustDecision = 'TRUSTWORTHY' | 'NOT_TRUSTWORTHY' | 'UNDECIDABLE';
 
 export type DecisionCounts = {[decision in TrustDecision]: number};
+
+// a change of trust decisions over time: from time on (in nanoseconds), the decisions (bit 1 << TdResults value each)
+export type DecisionSegment = { time: number, decisions: number };
 
 // names of the trust decisions by their value in TdResults (core.TrustDecision)
 export const TRUST_DECISIONS: TrustDecision[] = ['NOT_TRUSTWORTHY', 'TRUSTWORTHY', 'UNDECIDABLE'];
@@ -166,6 +171,7 @@ export const useAppStore = defineStore('app', {
           tmi.updateTimes = {};
           tmi.atls = {};
           delete tmi.decisionsByVersion;
+          delete tmi.timesByVersion;
         }
       }
     },
@@ -438,6 +444,10 @@ export const useAppStore = defineStore('app', {
           if (this.trustModelInstances[key]) {
             this.trustModelInstances[key].latestVersion = Math.max(this.trustModelInstances[key].latestVersion, msg.Version);
             this.trustModelInstances[key].latestUpdateTime = Math.max(this.trustModelInstances[key].latestUpdateTime ?? msg.Time, msg.Time);
+            const timesByVersion = this.trustModelInstances[key].timesByVersion;
+            if (timesByVersion && this.isWatched(key)) {
+              timesByVersion[msg.Version] = Math.max(timesByVersion[msg.Version] ?? msg.Time, msg.Time);
+            }
             if (!this.isLive(key)) {
               break;
             }
@@ -592,14 +602,15 @@ export const useAppStore = defineStore('app', {
     },
 
     /*
-      fetchTrustModelInstanceDecisions fetches the trust decisions of all versions of a known TMI, which are then kept up
-      to date while it is watched.
+      fetchTrustModelInstanceDecisions fetches the trust decisions and times of all versions of a known TMI, which are then
+      kept up to date while it is watched.
     */
     async fetchTrustModelInstanceDecisions(client: string, sessionID: string, template: string, id: string) {
       const res = await axios.get(`/api/tmis/${client}/${sessionID}/${template}/${id}/decisions`);
       const tmi = this.trustModelInstances[`//${client}/${sessionID}/${template}/${id}`];
       if (tmi) {
         tmi.decisionsByVersion = res.data.decisions;
+        tmi.timesByVersion = res.data.times ?? [];
         tmi.latestVersion = Math.max(tmi.latestVersion, res.data.latestVersion);
       }
     },
@@ -640,7 +651,7 @@ export const useAppStore = defineStore('app', {
       start time (in nanoseconds) and the decisions of the current versions of all active TMIs (bit 1 << TdResults value
       per decision).
     */
-    async fetchDecisionTimeline(): Promise<{ time: number, decisions: number }[]> {
+    async fetchDecisionTimeline(): Promise<DecisionSegment[]> {
       const req = await axios.get('/api/timeline');
       return req.data.segments ?? [];
     },
