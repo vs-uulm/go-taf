@@ -84,7 +84,7 @@
 
 <script lang="ts" setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { formatTafTime, TRUST_DECISION_COLORS, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
 import { Column, SortItem } from '@/types';
@@ -93,6 +93,7 @@ const filteredItems = ref<any[]>([]);
 const sortBy = ref<SortItem[]>([]);
 
 const router = useRouter();
+const route = useRoute();
 const store = useAppStore();
 
 // the trust decisions contained in decision bits (1 << TdResults value per decision), in the order of the legend
@@ -170,7 +171,7 @@ const TIME_STEP = 1e6;
 selectedTime is the time (in nanoseconds, see formatTafTime) at which the TMIs are shown, as fetched from the server
 into timedItems; undefined shows the latest state from the store, which is kept up to date live.
 */
-const selectedTime = ref<number | undefined>(undefined);
+const selectedTime = ref<number | undefined>(timeFromQuery());
 const timedItems = ref<TrustModelInstance[]>([]);
 
 // the timeline spans from the first spawn to the latest update of all TMIs
@@ -195,6 +196,30 @@ const sliderTime = computed({
 // incremented with each selection, so that responses for outdated selections are discarded
 let generation = 0;
 let fetchTimer: ReturnType<typeof setTimeout> | undefined;
+/*
+The selected time is kept in the query parameter at (in nanoseconds) like the search and filters, so that it is restored
+when returning to the overview, e.g., with the back button. It is replaced instead of pushed, so that moving the slider
+does not add an entry to the history for every position.
+*/
+function timeFromQuery(): number | undefined {
+  const at = Number(route.query.at);
+  return route.query.at !== undefined && route.query.at !== '' && Number.isFinite(at) ? at : undefined;
+}
+
+watch(selectedTime, (time) => {
+  const at = time === undefined ? undefined : String(Math.round(time));
+  if (at === route.query.at) {
+    return;
+  }
+  const query = { ...route.query };
+  if (at === undefined) {
+    delete query.at;
+  } else {
+    query.at = at;
+  }
+  router.replace({ query });
+});
+
 watch(selectedTime, (time) => {
   clearTimeout(fetchTimer);
   const current = ++generation;
@@ -208,7 +233,7 @@ watch(selectedTime, (time) => {
       timedItems.value = tmis;
     }
   }, 150);
-});
+}, { immediate: true });
 
 /*
 The track of the timeline shows the trust decisions of all TMIs over time like the timeline of the visualizer: red while
