@@ -36,16 +36,18 @@ func (r RefreshCAM) Type() core.UpdateOp {
 	return core.REFRESH_CAM
 }
 
+/*
+MarshalJSON leaves out the reference time, as the time of each update is shown separately (see package clock); it is
+still available via ReferenceTime.
+*/
 func (r RefreshCAM) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		SourceID      string                    `json:"sourceID"`
-		Opinion       v2xmsg.CamPositionOpinion `json:"opinion"`
-		ReferenceTime int64                     `json:"referenceTime"`
-		Update        string                    `json:"update"`
+		SourceID string                    `json:"sourceID"`
+		Opinion  v2xmsg.CamPositionOpinion `json:"opinion"`
+		Update   string                    `json:"update"`
 	}{
-		SourceID:      r.SourceID(),
-		Opinion:       r.opinion,
-		ReferenceTime: r.referenceTime,
-		Update:        r.Type().String(),
+		SourceID: r.SourceID(),
+		Opinion:  r.opinion,
+		Update:   r.Type().String(),
 	})
 }
