@@ -60,16 +60,19 @@ func (r HandleTMIInit) Type() core.CommandType {
 
 /*
 HandleTMIDestroy is a command that signals a TAM worker to destroy a Trust Model Instance from its shard.
+Time is the time of the deletion in nanoseconds (see package clock), taken when the command is created.
 */
 type HandleTMIDestroy struct {
 	commandType core.CommandType
 	FullTmiID   string
+	Time        int64
 }
 
 func CreateHandleTMIDestroy(fullTMIid string) HandleTMIDestroy {
 	return HandleTMIDestroy{
 		FullTmiID:   fullTMIid,
 		commandType: core.HANDLE_TMI_DESTROY,
+		Time:        clock.Now(),
 	}
 }
 

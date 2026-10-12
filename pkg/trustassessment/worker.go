@@ -167,7 +167,7 @@ func (worker *Worker) handleTMIDestroy(cmd command.HandleTMIDestroy) {
 	tmi.Cleanup()
 	delete(worker.tmis, cmd.FullTmiID)
 	delete(worker.tmiSessions, cmd.FullTmiID)
-	worker.notifyTMIDeleted(cmd.FullTmiID)
+	worker.notifyTMIDeleted(cmd.FullTmiID, cmd.Time)
 	//TODO: potential concurrency bug: send ATL update to wipe cache entry
 }
 
@@ -242,9 +242,9 @@ func (worker *Worker) notifyTMIUpdated(FullTmiID string, tmi core.TrustModelInst
 	}
 }
 
-func (worker *Worker) notifyTMIDeleted(FullTMI string) {
+func (worker *Worker) notifyTMIDeleted(FullTMI string, deleteTime int64) {
 	if len(worker.tmiListeners) > 0 {
-		event := listener.NewTrustModelInstanceDeletedEvent(FullTMI)
+		event := listener.NewTrustModelInstanceDeletedEvent(FullTMI, deleteTime)
 		for tmiListener := range worker.tmiListeners {
 			tmiListener.OnTrustModelInstanceDeleted(event)
 		}

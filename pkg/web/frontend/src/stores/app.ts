@@ -595,6 +595,35 @@ export const useAppStore = defineStore('app', {
       }
     },
 
+    /*
+      fetchTrustModelInstancesAt fetches the metadata of all TMIs as they were at the given time (in nanoseconds, see
+      formatTafTime): only TMIs spawned by then, each with its latest version at that time and the time of that version,
+      the trust decisions of the versions up to it, and whether it was still active. The result is not stored, as it is
+      a view of the past.
+    */
+    async fetchTrustModelInstancesAt(at: number): Promise<TrustModelInstance[]> {
+      const req = await axios.get('/api/tmis/', { params: { at: Math.round(at) } });
+      return (Object.values(req.data) as any[]).map(entry => {
+        const parts = entry.fullTMI.split('/');
+        return {
+          id: entry.id,
+          fullTMI: entry.fullTMI,
+          client: parts[2],
+          sessionID: parts[3],
+          template: entry.template,
+          active: entry.active,
+          latestVersion: entry.latestVersion,
+          latestUpdateTime: entry.latestUpdateTime,
+          spawnTime: entry.spawnTime,
+          decisionCounts: entry.decisionCounts ?? emptyDecisionCounts(),
+          states: {},
+          updates: {},
+          updateTimes: {},
+          atls: {}
+        };
+      });
+    },
+
     async fetchTrustModelInstances() {
       const req = await axios.get('/api/tmis');
       // update metadata only, so that already fetched states of watched TMIs are kept
@@ -615,7 +644,7 @@ export const useAppStore = defineStore('app', {
           states: existing?.states || {},
           updates: existing?.updates || {},
           updateTimes: existing?.updateTimes || {},
-          spawnTime: existing?.spawnTime,
+          spawnTime: entry.spawnTime ?? existing?.spawnTime,
           atls: existing?.atls || {}
         };
       }

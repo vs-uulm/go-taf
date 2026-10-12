@@ -73,12 +73,62 @@ type tmiMetaState struct {
 	// decisionBit); DecisionCounts counts the versions whose result set contains each decision.
 	Decisions      map[int]uint8
 	DecisionCounts map[core.TrustDecision]int
-	// UpdateTimes holds the time of each update in Update (same index), SpawnTime the time of version 0, and
-	// LatestUpdateTime the latest of all these times, all in nanoseconds as given by package clock (simulated time in
-	// simulation builds, Unix time otherwise).
+	// UpdateTimes holds the time of each update in Update (same index), SpawnTime the time of version 0,
+	// LatestUpdateTime the latest of all these times, and DeleteTime the time of the deletion (0 while active), all in
+	// nanoseconds as given by package clock (simulated time in simulation builds, Unix time otherwise).
 	UpdateTimes      map[int][]int64
 	SpawnTime        int64
 	LatestUpdateTime int64
+	DeleteTime       int64
+}
+
+/*
+versionTime returns the time of a version: the time of its latest update, or the time of the spawn for version 0.
+*/
+func (tmi *tmiMetaState) versionTime(version int) (int64, bool) {
+	if times := tmi.UpdateTimes[version]; len(times) > 0 {
+		return slices.Max(times), true
+	}
+	if version == 0 {
+		return tmi.SpawnTime, true
+	}
+	return 0, false
+}
+
+/*
+versionAt returns the latest version of the TMI at the given time, i.e., the highest version whose time is not later,
+or false if the TMI has not been spawned by then.
+*/
+func (tmi *tmiMetaState) versionAt(at int64) (int, int64, bool) {
+	if tmi.SpawnTime > at {
+		return 0, 0, false
+	}
+	version, versionTime := 0, tmi.SpawnTime
+	for v := range tmi.States {
+		if t, ok := tmi.versionTime(v); ok && t <= at && v > version {
+			version, versionTime = v, t
+		}
+	}
+	return version, versionTime, true
+}
+
+// decisionCountsUpTo returns the number of versions up to the given one per trust decision, keyed by decision name.
+func (tmi *tmiMetaState) decisionCountsUpTo(version int) map[string]int {
+	counts := make(map[string]int, len(trustDecisions))
+	for _, d := range trustDecisions {
+		counts[d.name] = 0
+	}
+	for v, bits := range tmi.Decisions {
+		if v > version {
+			continue
+		}
+		for _, d := range trustDecisions {
+			if bits&decisionBit(d.decision) != 0 {
+				counts[d.name]++
+			}
+		}
+	}
+	return counts
 }
 
 // trustDecisions lists all trust decisions with their names in the TMI overview.
@@ -360,6 +410,7 @@ func (s *State) handleTMIDeleted(event listener.TrustModelInstanceDeletedEvent) 
 	defer s.mutex.Unlock()
 	if tmi, exists := s.tmis[event.FullTMI]; exists {
 		tmi.IsActive = false
+		tmi.DeleteTime = event.Time
 	}
 }
 
@@ -716,6 +767,11 @@ func (s *State) getTMIDecisions(ctx *gin.Context) {
 	})
 }
 
+/*
+getAllTMIs returns a summary of every TMI. With the optional query parameter at (a time in nanoseconds, see package
+clock), it returns the TMIs as they were at that time instead: only those spawned by then, each with its latest version
+at that time, the time of that version, the trust decisions of the versions up to it, and whether it was still active.
+*/
 func (s *State) getAllTMIs(ctx *gin.Context) {
 	type tmiSummary struct {
 		Id            string `json:"id"`
@@ -725,14 +781,34 @@ func (s *State) getAllTMIs(ctx *gin.Context) {
 		LatestVersion int    `json:"latestVersion"`
 		// number of versions whose ATL result set contains each trust decision
 		DecisionCounts map[string]int `json:"decisionCounts"`
-		// time of the latest update (or of the spawn), see tmiMetaState.LatestUpdateTime
+		// time of the latest update (or of the spawn) and of the spawn, see tmiMetaState
 		LatestUpdateTime int64 `json:"latestUpdateTime"`
+		SpawnTime        int64 `json:"spawnTime"`
+	}
+
+	at, timed := int64(0), false
+	if rawAt, exists := ctx.GetQuery("at"); exists && rawAt != "" {
+		a, err := strconv.ParseInt(rawAt, 10, 64)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_TIME"})
+			return
+		}
+		at, timed = a, true
 	}
 
 	s.mutex.RLock()
 	tmis := make(map[string]tmiSummary, len(s.tmis))
 	for fullTMI, tmi := range s.tmis {
-		tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, tmi.IsActive, tmi.Template, tmi.LatestVersion, tmi.decisionCountsByName(), tmi.LatestUpdateTime}
+		if !timed {
+			tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, tmi.IsActive, tmi.Template, tmi.LatestVersion, tmi.decisionCountsByName(), tmi.LatestUpdateTime, tmi.SpawnTime}
+			continue
+		}
+		version, versionTime, spawned := tmi.versionAt(at)
+		if !spawned {
+			continue
+		}
+		active := tmi.IsActive || tmi.DeleteTime > at
+		tmis[fullTMI] = tmiSummary{tmi.ID, fullTMI, active, tmi.Template, version, tmi.decisionCountsUpTo(version), versionTime, tmi.SpawnTime}
 	}
 	s.mutex.RUnlock()
 	ctx.JSON(http.StatusOK, tmis)

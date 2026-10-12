@@ -7,6 +7,15 @@
     </v-btn>
   </Teleport>
 
+  <!-- the timeline shows the TMIs as they were at the selected time, or live at its end -->
+  <div class="d-flex align-center px-4" :style="{ height: `${TIMELINE_HEIGHT}px` }">
+    <v-slider v-model="sliderTime" :min="timeRange.min" :max="timeRange.max" :step="TIME_STEP" :disabled="timeRange.max <= timeRange.min" hide-details color="primary" class="flex-grow-1" title="Show the TMIs as they were at this time" />
+    <v-chip label class="ml-4 text-no-wrap" prepend-icon="mdi-clock-outline" :color="selectedTime === undefined ? 'success' : undefined" :title="selectedTime === undefined ? 'The latest state of the TMIs is shown' : 'The TMIs are shown as they were at this time'">
+      {{ selectedTime === undefined ? 'Live' : formatTafTime(selectedTime, store.timeSource) }}
+    </v-chip>
+    <v-btn class="ml-2" size="small" variant="text" prepend-icon="mdi-skip-forward" :disabled="selectedTime === undefined" title="Show the latest state of the TMIs" @click="selectedTime = undefined">Live</v-btn>
+  </div>
+
   <v-data-table-virtual :headers="headers" :items="filteredItems" :height="height" v-resize="onResize" multi-sort v-model:sort-by="sortBy" fixed-header @click:row="openTMI">
     <template #[`item.client`]="{ item }">
       <code class="mt-1">{{ item.client }}</code>
@@ -54,7 +63,7 @@
 </style>
 
 <script lang="ts" setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { formatTafTime, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TrustDecision, TrustModelInstance, useAppStore } from '@/stores/app';
@@ -114,16 +123,66 @@ function decisionSummaryText(count: number, decision: TrustDecision): string {
   return `${count} ${count === 1 ? 'version' : 'versions'} led to a${decision === 'UNDECIDABLE' ? 'n' : ''} ${TRUST_DECISION_LABELS[decision]} trust decision`;
 }
 
-const items = computed(() => Object.values(store.trustModelInstances));
+// height of the timeline above the table in pixels; times are selected in steps of 1 ms (in nanoseconds)
+const TIMELINE_HEIGHT = 56;
+const TIME_STEP = 1e6;
 
-const height = ref(document.body.clientHeight - 48);
+/*
+selectedTime is the time (in nanoseconds, see formatTafTime) at which the TMIs are shown, as fetched from the server
+into timedItems; undefined shows the latest state from the store, which is kept up to date live.
+*/
+const selectedTime = ref<number | undefined>(undefined);
+const timedItems = ref<TrustModelInstance[]>([]);
+
+// the timeline spans from the first spawn to the latest update of all TMIs
+const timeRange = computed(() => {
+  const all = Object.values(store.trustModelInstances);
+  const spawns = all.map(tmi => tmi.spawnTime).filter((t): t is number => t !== undefined);
+  const updates = all.map(tmi => tmi.latestUpdateTime).filter((t): t is number => t !== undefined);
+  if (!spawns.length || !updates.length) {
+    return { min: 0, max: 0 };
+  }
+  return { min: Math.min(...spawns), max: Math.max(...updates) };
+});
+
+// moving the slider to its end shows the latest state again
+const sliderTime = computed({
+  get: () => selectedTime.value ?? timeRange.value.max,
+  set: (time: number) => {
+    selectedTime.value = time >= timeRange.value.max ? undefined : time;
+  }
+});
+
+// incremented with each selection, so that responses for outdated selections are discarded
+let generation = 0;
+let fetchTimer: ReturnType<typeof setTimeout> | undefined;
+watch(selectedTime, (time) => {
+  clearTimeout(fetchTimer);
+  const current = ++generation;
+  if (time === undefined) {
+    timedItems.value = [];
+    return;
+  }
+  fetchTimer = setTimeout(async () => {
+    const tmis = await store.fetchTrustModelInstancesAt(time);
+    if (current === generation) {
+      timedItems.value = tmis;
+    }
+  }, 150);
+});
+
+const items = computed(() => selectedTime.value === undefined ? Object.values(store.trustModelInstances) : timedItems.value);
+
+const height = ref(document.body.clientHeight - 48 - TIMELINE_HEIGHT);
 
 function onResize() {
-  height.value = document.body.clientHeight - 48;
+  height.value = document.body.clientHeight - 48 - TIMELINE_HEIGHT;
 }
 
+// at a selected time, a TMI opens with its version at that time
 function openTMI(evt: PointerEvent, {item} : {item: TrustModelInstance}) {
-  router.push(`/tmis/${item.fullTMI.replace(/^\/*/, '')}`);
+  const path = `/tmis/${item.fullTMI.replace(/^\/*/, '')}`;
+  router.push(selectedTime.value === undefined ? path : `${path}/${item.latestVersion}`);
 }
 
 </script>

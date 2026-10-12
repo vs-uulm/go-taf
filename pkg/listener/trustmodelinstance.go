@@ -71,15 +71,21 @@ func (e TrustModelInstanceUpdatedEvent) Event() EventType {
 	return e.EventType
 }
 
+/*
+TrustModelInstanceDeletedEvent signals the deletion of a TMI. Timestamp is the wall-clock time of the event, Time the
+time of the deletion in nanoseconds as given by package clock (the simulated time in simulation builds).
+*/
 type TrustModelInstanceDeletedEvent struct {
 	EventType EventType
 	Timestamp time.Time
+	Time      int64
 	FullTMI   string
 }
 
-func NewTrustModelInstanceDeletedEvent(fullTMI string) TrustModelInstanceDeletedEvent {
+func NewTrustModelInstanceDeletedEvent(fullTMI string, deleteTime int64) TrustModelInstanceDeletedEvent {
 	return TrustModelInstanceDeletedEvent{
 		Timestamp: time.Now(),
+		Time:      deleteTime,
 		EventType: TRUST_MODEL_INSTANCE_DELETED,
 		FullTMI:   fullTMI}
 }
