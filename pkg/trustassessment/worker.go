@@ -102,7 +102,7 @@ func (worker *Worker) handleTMIInit(cmd command.HandleTMIInit) {
 	_, session, _, _ := core.SplitFullTMIIdentifier(cmd.FullTmiID)
 	worker.tmiSessions[cmd.FullTmiID] = session
 
-	worker.notifyTMISpawned(cmd.FullTmiID, cmd.TMI)
+	worker.notifyTMISpawned(cmd.FullTmiID, cmd.TMI, cmd.Time)
 
 	//Run TLEE
 	atls, err := worker.executeTLEE(cmd.FullTmiID, worker.tmis[cmd.FullTmiID])
@@ -133,7 +133,7 @@ func (worker *Worker) handleTMIUpdate(cmd command.HandleTMIUpdate) {
 	for _, update := range cmd.Updates {
 		if tmi.Update(update) {
 			runTlee = true
-			worker.notifyTMIUpdated(cmd.FullTmiID, tmi, update)
+			worker.notifyTMIUpdated(cmd.FullTmiID, tmi, update, cmd.Time)
 		}
 	}
 
@@ -206,7 +206,7 @@ func (worker *Worker) executeTDE(fullTmiId string, tmi core.TrustModelInstance, 
 	return resultSet
 }
 
-func (worker *Worker) notifyTMISpawned(FullTmiID string, tmi core.TrustModelInstance) {
+func (worker *Worker) notifyTMISpawned(FullTmiID string, tmi core.TrustModelInstance, spawnTime int64) {
 	if len(worker.tmiListeners) > 0 {
 		event := listener.NewTrustModelInstanceSpawnedEvent(tmi.ID(),
 			FullTmiID,
@@ -216,6 +216,7 @@ func (worker *Worker) notifyTMISpawned(FullTmiID string, tmi core.TrustModelInst
 			tmi.Structure(),
 			tmi.Values(),
 			tmi.RTLs(),
+			spawnTime,
 		)
 		for tmiListener := range worker.tmiListeners {
 			tmiListener.OnTrustModelInstanceSpawned(event)
@@ -223,7 +224,7 @@ func (worker *Worker) notifyTMISpawned(FullTmiID string, tmi core.TrustModelInst
 	}
 }
 
-func (worker *Worker) notifyTMIUpdated(FullTmiID string, tmi core.TrustModelInstance, update core.Update) {
+func (worker *Worker) notifyTMIUpdated(FullTmiID string, tmi core.TrustModelInstance, update core.Update, updateTime int64) {
 	if len(worker.tmiListeners) > 0 {
 		event := listener.NewTrustModelInstanceUpdatedEvent(tmi.ID(),
 			FullTmiID,
@@ -233,6 +234,7 @@ func (worker *Worker) notifyTMIUpdated(FullTmiID string, tmi core.TrustModelInst
 			tmi.Values(),
 			tmi.RTLs(),
 			update,
+			updateTime,
 		)
 		for tmiListener := range worker.tmiListeners {
 			tmiListener.OnTrustModelInstanceUpdated(event)

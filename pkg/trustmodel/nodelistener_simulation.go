@@ -5,16 +5,9 @@ package trustmodel
 
 import (
 	"sync"
-)
 
-/*
-simulationTime is the latest simulated time in nanoseconds, as advanced by AddNodeAt (i.e., by the reference times of
-V2X CAMs). It is shared by all listeners, as only the V2X listener receives timestamped messages.
-*/
-var simulationTime = struct {
-	sync.RWMutex
-	ns int64
-}{}
+	"github.com/vs-uulm/go-taf/pkg/clock"
+)
 
 // simulationListeners are all listeners whose expiry is checked whenever the simulated time advances.
 var simulationListeners = struct {
@@ -40,39 +33,28 @@ func (l *EntityObserver) startExpiryLoop(checkIntervalSeconds int) {
 	simulationListeners.listeners = append(simulationListeners.listeners, l)
 }
 
+func init() {
+	clock.OnAdvance(expireListeners)
+}
+
 /*
-currentTimestamp returns the simulated time in nanoseconds. Before the first V2X CAM, the simulated time is not known
-yet and 0 is returned; such nodes are timestamped with the first known simulated time (see expireAt).
+currentTimestamp returns the simulated time in nanoseconds. Before the simulated time is known (see clock.Now), 0 is
+returned; such nodes are timestamped with the first known simulated time (see expireAt).
 */
 func currentTimestamp() int64 {
-	return simulationTimeValue()
-}
-
-func simulationTimeValue() int64 {
-	simulationTime.RLock()
-	defer simulationTime.RUnlock()
-	return simulationTime.ns
+	return clock.Now()
 }
 
 /*
-advanceSimulationTime sets the simulated time to the given timestamp, if newer, and then checks all listeners for
-expired nodes.
+expireListeners checks all listeners for expired nodes whenever the simulated time advances.
 */
-func advanceSimulationTime(timestampNs int64) {
-	simulationTime.Lock()
-	if timestampNs <= simulationTime.ns {
-		simulationTime.Unlock()
-		return
-	}
-	simulationTime.ns = timestampNs
-	simulationTime.Unlock()
-
+func expireListeners(nowNs int64) {
 	simulationListeners.Lock()
 	listeners := append([]*EntityObserver(nil), simulationListeners.listeners...)
 	simulationListeners.Unlock()
 
 	for _, listener := range listeners {
-		listener.expireAt(timestampNs)
+		listener.expireAt(nowNs)
 	}
 }
 

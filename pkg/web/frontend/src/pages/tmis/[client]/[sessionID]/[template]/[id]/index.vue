@@ -29,8 +29,12 @@
     <template #[`item.updates`]="{ item }">
       <!-- spacing is set explicitly, as Vuetify 4 no longer resets the browser's default margins and paddings -->
       <ul class="mt-1 pa-0">
-        <li v-for="(update, i) in item.updates" :key="i"><pre class="ma-0">{{ update }}</pre></li>
+        <li v-for="(update, i) in item.updates" :key="i">
+          <div class="text-label-medium text-medium-emphasis" title="Time of the update">{{ formatTafTime(item.updateTimes?.[i], store.timeSource) }}</div>
+          <pre class="ma-0">{{ update }}</pre>
+        </li>
       </ul>
+      <div v-if="item.version === 0 && !item.updates?.length" class="mt-1 text-label-medium text-medium-emphasis" title="Time of the spawn">Spawned at {{ formatTafTime(trustModelInstance?.spawnTime, store.timeSource) }}</div>
     </template>
     <template #[`item.atls`]="{ item }">
       <v-card variant="outlined" class="mx-2 my-1" v-for="(_, scope) in item.atls?.SlResults" :key="scope">
@@ -114,7 +118,7 @@
 import { computed, nextTick, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { TRUST_DECISION_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
+import { formatTafTime, TRUST_DECISION_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
 import { Column, SortItem } from '@/types';
 import router from '@/router';
 
@@ -219,6 +223,7 @@ function stringifyUpdate(update: any): string {
 const items = computed(() => Object.entries(trustModelInstance.value?.states || {}).map(([k, v]) => ({
   version: Number(k),
   updates: trustModelInstance.value?.updates?.[k]?.map?.(stringifyUpdate),
+  updateTimes: trustModelInstance.value?.updateTimes?.[k],
   atls: trustModelInstance.value?.atls?.[k],
   state: v
 })));

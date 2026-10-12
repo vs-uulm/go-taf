@@ -7,6 +7,7 @@ import (
 	"github.com/vs-uulm/go-taf/cmd/flags"
 	"github.com/vs-uulm/go-taf/internal/flow/completionhandler"
 	logging "github.com/vs-uulm/go-taf/internal/logger"
+	"github.com/vs-uulm/go-taf/pkg/clock"
 	"github.com/vs-uulm/go-taf/pkg/command"
 	"github.com/vs-uulm/go-taf/pkg/communication"
 	"github.com/vs-uulm/go-taf/pkg/config"
@@ -25,6 +26,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 )
 
 type Manager struct {
@@ -164,8 +166,10 @@ func (tam *Manager) handleTAMCommand(incomingCmd core.Command, tsm manager.Trust
 	case command.HandleResponse[mbdmsg.MBDUnsubscribeResponse]:
 		tsm.HandleMbdUnsubscribeResponse(cmd)
 	case command.HandleNotify[mbdmsg.MBDNotify]:
+		tam.advanceClockToMbdNotify(cmd.Notify)
 		tsm.HandleMbdNotify(cmd)
 	case command.HandleNotify[tchmsg.TchNotify]:
+		tam.advanceClockToTchNotify(cmd.Notify)
 		tmm.HandleTchNotify(cmd)
 		tsm.HandleTchNotify(cmd)
 	case command.HandleNotify[v2xmsg.V2XNtm]:
@@ -181,6 +185,32 @@ func (tam *Manager) handleTAMCommand(incomingCmd core.Command, tsm manager.Trust
 	default:
 		tam.logger.Warn("Command with no associated handling logic received by TAM from Communication Handler", "Command Type", cmd.Type())
 	}
+}
+
+/*
+advanceClockToMbdNotify advances the simulated time to the generation time of an MBD report (in nanoseconds, like the
+reference times of V2X CAMs), before the report is handled. It does nothing without simulation.
+*/
+func (tam *Manager) advanceClockToMbdNotify(notify mbdmsg.MBDNotify) {
+	if flags.SIMULATION {
+		clock.Advance(int64(notify.CpmReport.GenerationTime))
+	}
+}
+
+/*
+advanceClockToTchNotify advances the simulated time to the timestamp of a TCH notification (RFC 3339, with the
+simulated time counted from the Unix epoch), before the notification is handled. It does nothing without simulation.
+*/
+func (tam *Manager) advanceClockToTchNotify(notify tchmsg.TchNotify) {
+	if !flags.SIMULATION {
+		return
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, notify.Evidence.Timestamp)
+	if err != nil {
+		tam.logger.Warn("Invalid timestamp in TCH_NOTIFY, the simulated time is not advanced", "Timestamp", notify.Evidence.Timestamp, "Error", err)
+		return
+	}
+	clock.Advance(timestamp.UnixNano())
 }
 
 func (tam *Manager) generateSessionId() string {

@@ -13,9 +13,14 @@ type TrustModelInstanceListener interface {
 	OnTrustModelInstanceDeleted(event TrustModelInstanceDeletedEvent)
 }
 
+/*
+TrustModelInstanceSpawnedEvent signals a new TMI. Timestamp is the wall-clock time of the event, Time the time of the
+spawn in nanoseconds as given by package clock (the simulated time in simulation builds).
+*/
 type TrustModelInstanceSpawnedEvent struct {
 	EventType   EventType
 	Timestamp   time.Time
+	Time        int64
 	ID          string
 	FullTMI     string
 	Template    core.TrustModelTemplate
@@ -26,9 +31,10 @@ type TrustModelInstanceSpawnedEvent struct {
 	RTLs        map[string]subjectivelogic.QueryableOpinion
 }
 
-func NewTrustModelInstanceSpawnedEvent(ID string, fullTMI string, template core.TrustModelTemplate, version int, fingerprint uint32, structure trustmodelstructure.TrustGraphStructure, values map[string][]trustmodelstructure.TrustRelationship, RTLs map[string]subjectivelogic.QueryableOpinion) TrustModelInstanceSpawnedEvent {
+func NewTrustModelInstanceSpawnedEvent(ID string, fullTMI string, template core.TrustModelTemplate, version int, fingerprint uint32, structure trustmodelstructure.TrustGraphStructure, values map[string][]trustmodelstructure.TrustRelationship, RTLs map[string]subjectivelogic.QueryableOpinion, spawnTime int64) TrustModelInstanceSpawnedEvent {
 	return TrustModelInstanceSpawnedEvent{
 		Timestamp: time.Now(),
+		Time:      spawnTime,
 		EventType: TRUST_MODEL_INSTANCE_SPAWNED,
 		ID:        ID, FullTMI: fullTMI, Template: template, Version: version, Fingerprint: fingerprint, Structure: structure, Values: values, RTLs: RTLs}
 }
@@ -36,9 +42,14 @@ func (e TrustModelInstanceSpawnedEvent) Event() EventType {
 	return e.EventType
 }
 
+/*
+TrustModelInstanceUpdatedEvent signals an update applied to a TMI. Timestamp is the wall-clock time of the event, Time
+the time of the update in nanoseconds as given by package clock (the simulated time in simulation builds).
+*/
 type TrustModelInstanceUpdatedEvent struct {
 	EventType   EventType
 	Timestamp   time.Time
+	Time        int64
 	ID          string
 	FullTMI     string
 	Version     int
@@ -49,9 +60,10 @@ type TrustModelInstanceUpdatedEvent struct {
 	Update      core.Update
 }
 
-func NewTrustModelInstanceUpdatedEvent(ID string, fullTMI string, version int, fingerprint uint32, structure trustmodelstructure.TrustGraphStructure, values map[string][]trustmodelstructure.TrustRelationship, RTLs map[string]subjectivelogic.QueryableOpinion, Update core.Update) TrustModelInstanceUpdatedEvent {
+func NewTrustModelInstanceUpdatedEvent(ID string, fullTMI string, version int, fingerprint uint32, structure trustmodelstructure.TrustGraphStructure, values map[string][]trustmodelstructure.TrustRelationship, RTLs map[string]subjectivelogic.QueryableOpinion, Update core.Update, updateTime int64) TrustModelInstanceUpdatedEvent {
 	return TrustModelInstanceUpdatedEvent{
 		Timestamp: time.Now(),
+		Time:      updateTime,
 		EventType: TRUST_MODEL_INSTANCE_UPDATED,
 		ID:        ID, FullTMI: fullTMI, Version: version, Fingerprint: fingerprint, Structure: structure, Values: values, RTLs: RTLs, Update: Update}
 }

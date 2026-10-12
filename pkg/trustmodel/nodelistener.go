@@ -2,14 +2,16 @@ package trustmodel
 
 import (
 	"sync"
+
+	"github.com/vs-uulm/go-taf/pkg/clock"
 )
 
 /*
 How nodes are timestamped and how their expiry is checked depends on the build:
   - without the simulation build tag (nodelistener_nosim.go), nodes are timestamped with the wall clock and a wall-clock
     ticker checks for expired nodes,
-  - with the simulation build tag (nodelistener_simulation.go), nodes are timestamped with the simulated time and the
-    expiry check is driven by the simulated time.
+  - with the simulation build tag (nodelistener_simulation.go), nodes are timestamped with the simulated time (see
+    package clock) and the expiry check is driven by the simulated time.
 */
 
 type observer interface {
@@ -76,7 +78,7 @@ func (l *EntityObserver) AddNode(identifier string) {
 
 /*
 AddNodeAt adds or refreshes a node with the given timestamp in nanoseconds. In simulation builds, the timestamp also
-advances the simulated time.
+advances the simulated time (see clock.Advance).
 */
 func (l *EntityObserver) AddNodeAt(identifier string, timestampNs int64) {
 	l.lock.Lock()
@@ -88,7 +90,7 @@ func (l *EntityObserver) AddNodeAt(identifier string, timestampNs int64) {
 	l.lock.Unlock()
 
 	// called without holding the lock, as advancing the simulated time checks all listeners for expired nodes
-	advanceSimulationTime(timestampNs)
+	clock.Advance(timestampNs)
 }
 
 func (l *EntityObserver) RemoveNode(identifier string) {

@@ -11,6 +11,7 @@
       <div class="d-flex ga-1 mr-2">
         <v-chip v-for="d in LEGEND" :key="d" size="x-small" label variant="flat" :color="TRUST_DECISION_COLORS[d]">{{ TRUST_DECISION_LABELS[d] }}</v-chip>
       </div>
+      <v-chip class="mr-2" :title="version === 0 ? 'Time of the spawn' : 'Time of the update leading to this version'">{{ formatTafTime(versionTime, store.timeSource) }}</v-chip>
       <v-chip class="pr-0">
         Version
         <v-chip class="ml-2 font-weight-bold">{{ version }}</v-chip>
@@ -33,7 +34,7 @@
 <script lang='ts' setup>
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { TRUST_DECISION_COLORS, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
+import { formatTafTime, TRUST_DECISION_COLORS, TRUST_DECISION_CSS_COLORS, TRUST_DECISION_LABELS, TRUST_DECISIONS, TrustDecision, useAppStore, useWatchedTrustModelInstance } from '@/stores/app';
 
 // ticks are only shown for few versions, as each one is a DOM element
 const MAX_TICKS = 100;
@@ -57,6 +58,14 @@ const version = computed({
 watch(() => route.params.version, () => loadVersion());
 
 const state = computed(() => trustModelInstance.value?.states?.[version.value]);
+
+// the time of a version is the time of its (last) update, or the time of the spawn for version 0
+const versionTime = computed(() => {
+  if (version.value === 0) {
+    return trustModelInstance.value?.spawnTime;
+  }
+  return trustModelInstance.value?.updateTimes?.[version.value]?.at(-1);
+});
 
 // color of a version on the track: a negative decision dominates, versions without ATLs stay neutral
 function decisionColor(bits: number): string {

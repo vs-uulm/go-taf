@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	logging "github.com/vs-uulm/go-taf/internal/logger"
 	"github.com/vs-uulm/go-taf/internal/version"
+	"github.com/vs-uulm/go-taf/pkg/clock"
 	"github.com/vs-uulm/go-taf/pkg/core"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 )
@@ -150,7 +151,7 @@ func (s *Webserver) getTrustModel(ctx *gin.Context) {
 }
 
 func (s *Webserver) getInfo(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{"Version": version.Version, "Build": version.Build, "Configuration": s.tafContext.Configuration})
+	ctx.JSON(http.StatusOK, gin.H{"Version": version.Version, "Build": version.Build, "Configuration": s.tafContext.Configuration, "TimeSource": clock.Source})
 }
 
 func (s *Webserver) SetManagers(managers manager.TafManagers) {

@@ -18,10 +18,32 @@ export type TrustModelInstance = {
   decisionsByVersion?: number[],
   states: {[key: string]: TrustModelInstanceState},
   atls: {[key: string]: ActualTrustworthinessLevel},
-  updates: {[key: string]: TrustModelInstanceUpdate}
+  updates: {[key: string]: TrustModelInstanceUpdate},
+  // time of each update (same index as in updates) and of the spawn (version 0) in nanoseconds, see formatTafTime
+  updateTimes: {[key: string]: number[]},
+  spawnTime?: number
 };
 
 export type TrustModelInstanceUpdate = any
+
+// how the TAF measures the times of TMI updates (TimeSource of /api/info): the simulated time in nanoseconds in
+// simulation builds, the wall-clock time as Unix time in nanoseconds otherwise
+export type TimeSource = 'simulation' | 'wallclock';
+
+/*
+formatTafTime formats a time of the TAF in nanoseconds: the simulated time in seconds, the wall-clock time as local date
+and time with milliseconds.
+*/
+export function formatTafTime(ns: number | undefined, source: TimeSource | undefined): string {
+  if (ns === undefined || ns === null) {
+    return '-';
+  }
+  if (source === 'simulation') {
+    return `${(ns / 1e9).toFixed(3)} s`;
+  }
+  const date = new Date(ns / 1e6);
+  return `${date.toLocaleString()}.${String(date.getMilliseconds()).padStart(3, '0')}`;
+}
 
 export type TrustDecision = 'TRUSTWORTHY' | 'NOT_TRUSTWORTHY' | 'UNDECIDABLE';
 
@@ -113,6 +135,7 @@ export const useAppStore = defineStore('app', {
     liveHistoryLimits: {} as {[key: string]: number},
     // incremented whenever the state has been re-fetched after a reconnect, so that pages can re-fetch their data
     syncGeneration: 0,
+    timeSource: undefined as (TimeSource|undefined),
   }),
 
   actions: {
@@ -134,6 +157,7 @@ export const useAppStore = defineStore('app', {
         if (tmi) {
           tmi.states = {};
           tmi.updates = {};
+          tmi.updateTimes = {};
           tmi.atls = {};
           delete tmi.decisionsByVersion;
         }
@@ -162,6 +186,7 @@ export const useAppStore = defineStore('app', {
       if (tmi) {
         tmi.states = {};
         tmi.updates = {};
+        tmi.updateTimes = {};
         tmi.atls = {};
       }
     },
@@ -177,6 +202,7 @@ export const useAppStore = defineStore('app', {
       for (const version of Object.keys(tmi.states).map(Number).filter(v => !versions.includes(v))) {
         delete tmi.states[version];
         delete tmi.updates[version];
+        delete tmi.updateTimes[version];
         delete tmi.atls[version];
       }
     },
@@ -198,6 +224,7 @@ export const useAppStore = defineStore('app', {
       for (const version of versions.slice(0, Math.max(0, versions.length - limit))) {
         delete tmi.states[version];
         delete tmi.updates[version];
+        delete tmi.updateTimes[version];
         delete tmi.atls[version];
       }
     },
@@ -299,6 +326,8 @@ export const useAppStore = defineStore('app', {
             latestVersion: msg.Version,
             decisionCounts: emptyDecisionCounts(),
             updates: {},
+            updateTimes: {},
+            spawnTime: msg.Time,
             states: this.isLive(msg.FullTMI) ? {
               [String(msg.Version)]: markRaw({
                 Version: msg.Version,
@@ -408,21 +437,28 @@ export const useAppStore = defineStore('app', {
               if (!this.trustModelInstances[key].updates) {
                 this.trustModelInstances[key].updates = {};
               }
+              if (!this.trustModelInstances[key].updateTimes) {
+                this.trustModelInstances[key].updateTimes = {};
+              }
 
               if (this.trustModelInstances[key].states[msg.Version]) {
                 if (!Array.isArray(this.trustModelInstances[key].updates[msg.Version + 1])) {
                   this.trustModelInstances[key].updates[msg.Version + 1] = [];
+                  this.trustModelInstances[key].updateTimes[msg.Version + 1] = [];
                 }
 
                 this.trustModelInstances[key].updates[msg.Version + 1].push(markRaw(msg.Update));
+                this.trustModelInstances[key].updateTimes[msg.Version + 1].push(msg.Time);
                 return;
               }
 
               if (!Array.isArray(this.trustModelInstances[key].updates[msg.Version])) {
                 this.trustModelInstances[key].updates[msg.Version] = [];
+                this.trustModelInstances[key].updateTimes[msg.Version] = [];
               }
 
               this.trustModelInstances[key].updates[msg.Version].push(markRaw(msg.Update));
+              this.trustModelInstances[key].updateTimes[msg.Version].push(msg.Time);
             }
 
             this.trustModelInstances[key].states[msg.Version] = markRaw(msg);
@@ -451,7 +487,12 @@ export const useAppStore = defineStore('app', {
           atls: {},
           states: {},
           updates: {},
+          updateTimes: {},
         };
+      }
+
+      if (res.data.spawnTime !== undefined) {
+        this.trustModelInstances[key].spawnTime = res.data.spawnTime;
       }
 
       if (res.data.atls?.Version !== undefined) {
@@ -463,6 +504,7 @@ export const useAppStore = defineStore('app', {
 
         if (Array.isArray(res.data.updates)) {
           this.trustModelInstances[key].updates[res.data.state.Version] = res.data.updates.map(markRaw);
+          this.trustModelInstances[key].updateTimes[res.data.state.Version] = res.data.updateTimes ?? [];
         }
       } else if (typeof(res.data.states) === 'object') {
         this.trustModelInstances[key].states = rawValues(res.data.states);
@@ -470,6 +512,7 @@ export const useAppStore = defineStore('app', {
           this.trustModelInstances[key].updates = Object.fromEntries(
             Object.entries(res.data.updates || {}).map(([k, v]) => [k, Array.isArray(v) ? v.map(markRaw) : v])
           );
+          this.trustModelInstances[key].updateTimes = res.data.updateTimes ?? {};
         }
         if (typeof(res.data.atls) === 'object') {
           this.trustModelInstances[key].atls = rawValues(res.data.atls);
@@ -515,14 +558,19 @@ export const useAppStore = defineStore('app', {
           atls: {},
           states: {},
           updates: {},
+          updateTimes: {},
         };
       }
 
       const tmi = this.trustModelInstances[key];
       tmi.latestVersion = Math.max(tmi.latestVersion, res.data.latestVersion);
+      if (res.data.spawnTime !== undefined) {
+        tmi.spawnTime = res.data.spawnTime;
+      }
       for (const item of res.data.versions) {
         tmi.states[item.version] = markRaw(item.state);
         tmi.updates[item.version] = Array.isArray(item.updates) ? item.updates.map(markRaw) : item.updates;
+        tmi.updateTimes[item.version] = item.updateTimes ?? [];
         if (item.atls) {
           tmi.atls[item.version] = markRaw(item.atls);
         }
@@ -561,6 +609,8 @@ export const useAppStore = defineStore('app', {
           decisionCounts: entry.decisionCounts ?? emptyDecisionCounts(),
           states: existing?.states || {},
           updates: existing?.updates || {},
+          updateTimes: existing?.updateTimes || {},
+          spawnTime: existing?.spawnTime,
           atls: existing?.atls || {}
         };
       }
@@ -584,6 +634,12 @@ export const useAppStore = defineStore('app', {
     async init() {
       await this.fetchTrustModelInstances();
       await this.fetchSessions();
+      await this.fetchTimeSource();
+    },
+
+    async fetchTimeSource() {
+      const res = await axios.get('/api/info');
+      this.timeSource = res.data.TimeSource;
     },
 
     /*

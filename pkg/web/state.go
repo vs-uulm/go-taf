@@ -73,6 +73,10 @@ type tmiMetaState struct {
 	// decisionBit); DecisionCounts counts the versions whose result set contains each decision.
 	Decisions      map[int]uint8
 	DecisionCounts map[core.TrustDecision]int
+	// UpdateTimes holds the time of each update in Update (same index), SpawnTime the time of version 0, both in
+	// nanoseconds as given by package clock (simulated time in simulation builds, Unix time otherwise).
+	UpdateTimes map[int][]int64
+	SpawnTime   int64
 }
 
 // trustDecisions lists all trust decisions with their names in the TMI overview.
@@ -286,6 +290,8 @@ func (s *State) handleTMISpawned(event listener.TrustModelInstanceSpawnedEvent) 
 		IsActive:       true,
 		LatestVersion:  0,
 		Update:         make(map[int][]json.RawMessage),
+		UpdateTimes:    make(map[int][]int64),
+		SpawnTime:      event.Time,
 		States:         map[int]json.RawMessage{event.Version: state},
 		Template:       event.Template.Identifier(),
 		ID:             event.ID,
@@ -319,6 +325,7 @@ func (s *State) handleTMIUpdated(event listener.TrustModelInstanceUpdatedEvent) 
 	if versionExists {
 		s.mutex.Lock()
 		tmi.Update[event.Version+1] = []json.RawMessage{update}
+		tmi.UpdateTimes[event.Version+1] = []int64{event.Time}
 		s.mutex.Unlock()
 		return nil
 	}
@@ -338,6 +345,7 @@ func (s *State) handleTMIUpdated(event listener.TrustModelInstanceUpdatedEvent) 
 	defer s.mutex.Unlock()
 	tmi.States[event.Version] = state
 	tmi.Update[event.Version] = append(tmi.Update[event.Version], update)
+	tmi.UpdateTimes[event.Version] = append(tmi.UpdateTimes[event.Version], event.Time)
 	tmi.LatestVersion = event.Version
 	return nil
 }
@@ -466,6 +474,7 @@ func (s *State) tmi(ctx *gin.Context) (tmiMetaState, bool) {
 	result := *tmi
 	result.States = maps.Clone(tmi.States)
 	result.Update = maps.Clone(tmi.Update)
+	result.UpdateTimes = maps.Clone(tmi.UpdateTimes)
 	result.ATLs = maps.Clone(tmi.ATLs)
 	result.Decisions = maps.Clone(tmi.Decisions)
 	result.DecisionCounts = maps.Clone(tmi.DecisionCounts)
@@ -488,13 +497,15 @@ func (s *State) getTMIFull(ctx *gin.Context) {
 		return
 	} else {
 		res := gin.H{
-			"id":       tmi.ID,
-			"fullTMI":  tmi.FullTMI,
-			"active":   tmi.IsActive,
-			"template": tmi.Template,
-			"states":   tmi.States,
-			"updates":  tmi.Update,
-			"atls":     tmi.ATLs,
+			"id":          tmi.ID,
+			"fullTMI":     tmi.FullTMI,
+			"active":      tmi.IsActive,
+			"template":    tmi.Template,
+			"states":      tmi.States,
+			"updates":     tmi.Update,
+			"updateTimes": tmi.UpdateTimes,
+			"spawnTime":   tmi.SpawnTime,
+			"atls":        tmi.ATLs,
 		}
 
 		ctx.JSON(http.StatusOK, res)
@@ -607,10 +618,11 @@ func (s *State) getTMIVersions(ctx *gin.Context) {
 	items := make([]gin.H, len(page))
 	for i, version := range page {
 		items[i] = gin.H{
-			"version": version,
-			"state":   tmi.States[version],
-			"updates": tmi.Update[version],
-			"atls":    tmi.ATLs[version],
+			"version":     version,
+			"state":       tmi.States[version],
+			"updates":     tmi.Update[version],
+			"updateTimes": tmi.UpdateTimes[version],
+			"atls":        tmi.ATLs[version],
 		}
 	}
 	ctx.JSON(http.StatusOK, gin.H{
@@ -619,6 +631,7 @@ func (s *State) getTMIVersions(ctx *gin.Context) {
 		"active":        tmi.IsActive,
 		"template":      tmi.Template,
 		"latestVersion": tmi.LatestVersion,
+		"spawnTime":     tmi.SpawnTime,
 		"total":         total,
 		"matches":       len(versions),
 		"versions":      items,
@@ -651,12 +664,14 @@ func versionResponse(tmi tmiMetaState, version int) gin.H {
 		state, _ = json.Marshal(tmiState{})
 	}
 	res := gin.H{
-		"id":       tmi.ID,
-		"fullTMI":  tmi.FullTMI,
-		"active":   tmi.IsActive,
-		"template": tmi.Template,
-		"state":    state,
-		"updates":  tmi.Update[version],
+		"id":          tmi.ID,
+		"fullTMI":     tmi.FullTMI,
+		"active":      tmi.IsActive,
+		"template":    tmi.Template,
+		"state":       state,
+		"updates":     tmi.Update[version],
+		"updateTimes": tmi.UpdateTimes[version],
+		"spawnTime":   tmi.SpawnTime,
 	}
 
 	atls, atlExist := tmi.ATLs[version]

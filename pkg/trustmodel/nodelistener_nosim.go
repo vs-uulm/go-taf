@@ -34,6 +34,3 @@ func (l *EntityObserver) startExpiryLoop(checkIntervalSeconds int) {
 func currentTimestamp() int64 {
 	return time.Now().Unix()
 }
-
-// advanceSimulationTime does nothing without simulation.
-func advanceSimulationTime(int64) {}
