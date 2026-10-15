@@ -64,7 +64,7 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 	}
 
 	//quantifies the position opinion a vehicle V_x sends about itself in its CAMs. CAMs do not pass through a trust source
-	//handler, so each TMI applies this quantifier itself when handling a RefreshCAM update (see TrustModelInstance.Update)
+	//handler, so each TMI applies this quantifier itself when handling a UpdateCamOpinion update (see TrustModelInstance.Update)
 	camQuantifier := core.TrustSourceQuantifier{
 		Trustor:     "V_*",
 		Trustee:     "C_*_*",

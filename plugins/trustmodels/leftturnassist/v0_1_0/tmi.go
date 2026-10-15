@@ -24,7 +24,7 @@ type TrustModelInstance struct {
 	camOpinion subjectivelogic.QueryableOpinion // Opinion V_{sourceID} -> C_sourceID_{X}, the position opinion of V_{sourceID} from its CAMs
 	mbdOpinion subjectivelogic.QueryableOpinion // Opinion V_ego -> C_sourceID_{X}
 
-	camQuantifier core.TrustSourceQuantifier // quantifies the position opinion of RefreshCAM updates into camOpinion
+	camQuantifier core.TrustSourceQuantifier // quantifies the position opinion of UpdateCamOpinion updates into camOpinion
 
 	currentStructure   trustmodelstructure.TrustGraphStructure
 	currentValues      map[string][]trustmodelstructure.TrustRelationship
@@ -62,7 +62,7 @@ func (e *TrustModelInstance) Template() core.TrustModelTemplate {
 func (e *TrustModelInstance) Update(update core.Update) bool {
 	oldVersion := e.Version()
 	switch update := update.(type) {
-	case trustmodelupdate.RefreshCAM:
+	case trustmodelupdate.UpdateCamOpinion:
 		if update.SourceID() == e.targetVehicleID {
 			receivedOpinion, err := subjectivelogic.NewOpinion(
 				update.Opinion().Belief,

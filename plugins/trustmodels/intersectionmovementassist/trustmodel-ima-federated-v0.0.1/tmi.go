@@ -63,7 +63,7 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 			e.incrementVersion()
 			e.updateValues()
 		}
-	case trustmodelupdate.RefreshCAM:
+	case trustmodelupdate.UpdateCamOpinion:
 		if update.SourceID() == e.sourceID {
 			camOpinion, err := subjectivelogic.NewOpinion(
 				update.Opinion().Belief,

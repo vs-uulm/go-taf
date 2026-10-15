@@ -31,7 +31,7 @@ const (
 	/*
 		Update a Trust Model based upon a CAM information (sender-reported trust opinion)
 	*/
-	REFRESH_CAM
+	UPDATE_CAM_OPINION
 )
 
 func (u UpdateOp) String() string {
@@ -41,7 +41,7 @@ func (u UpdateOp) String() string {
 		"ADD_TRUST_OBJECT",
 		"REMOVE_TRUST_OBJECT",
 		"REFRESH_CPM",
-		"REFRESH_CAM",
+		"UPDATE_CAM_OPINION",
 	}[u]
 }
 

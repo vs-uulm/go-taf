@@ -152,7 +152,7 @@ func (tmm *Manager) HandleV2xCamMessage(cmd command.HandleOneWay[v2xmsg.V2XCam])
 	}
 	if len(targetTMIIDs) > 0 {
 		for _, fullTMIID := range targetTMIIDs {
-			updateCmd := command.CreateHandleTMIUpdate(fullTMIID, cmd.OneWay.Tag, trustmodelupdate.CreateRefreshCAM(sender, cmd.OneWay.Opinions.Position, cmd.OneWay.ReferenceTime))
+			updateCmd := command.CreateHandleTMIUpdate(fullTMIID, cmd.OneWay.Tag, trustmodelupdate.CreateCamOpinionUpdate(sender, cmd.OneWay.Opinions.Position, cmd.OneWay.ReferenceTime))
 			tmm.tam.DispatchToWorkerByFullTMIID(fullTMIID, updateCmd)
 		}
 	}
