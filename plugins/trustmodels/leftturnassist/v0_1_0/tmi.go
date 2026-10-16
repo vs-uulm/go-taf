@@ -24,6 +24,8 @@ type TrustModelInstance struct {
 	camOpinion subjectivelogic.QueryableOpinion // Opinion V_{sourceID} -> C_sourceID_{X}, the position opinion of V_{sourceID} from its CAMs
 	mbdOpinion subjectivelogic.QueryableOpinion // Opinion V_ego -> C_sourceID_{X}
 
+	mbdWindowing mbdWindowing // combines the recent MBD opinions into mbdOpinion
+
 	camQuantifier core.TrustSourceQuantifier // quantifies the position opinion of UpdateCamOpinion updates into camOpinion
 
 	currentStructure   trustmodelstructure.TrustGraphStructure
@@ -91,7 +93,7 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 		} else if strings.HasPrefix(trustee, "C_") {
 			source, id, err := parseObjectIdentifier(trustee)
 			if err == nil && source == e.targetVehicleID && id == e.targetVehicleID {
-				e.mbdOpinion = update.Opinion()
+				e.mbdOpinion = e.mbdWindowing.add(update.Opinion())
 				e.updateValues()
 				e.incrementVersion()
 			}
@@ -197,6 +199,7 @@ func (e *TrustModelInstance) Initialize(params map[string]interface{}) {
 	e.tchOpinion = &FullUncertainty
 	e.camOpinion = &FullUncertainty
 	e.mbdOpinion = &FullUncertainty
+	e.mbdWindowing.reset()
 
 	e.updateStructure()
 	e.updateFingerprint()

@@ -105,6 +105,14 @@ OnNewVehicle spawns a new TMI upon an arriving vehicle. It has the following opt
 									Mandatory Params:
 												- PROPORTIONAL_FUSION_WEIGHT_EGO (weight in [0,1] of V_ego's own opinion on C_x_x; the opinion via V_x gets 1-weight)
 	DISCOUNTING_OPERATOR 	: Uncertainty_Favouring|Base_Rate_Sensitive|Disbelief_Favouring
+	MBD_WINDOW_WEIGHTING	: equal (default)|linear|temporal
+								equal, linear
+									Optional Params:
+												- MBD_WINDOW_SIZE (number of recent MBD opinions, default 1 = off)
+								temporal
+									Mandatory Params:
+												- MBD_TEMPORAL_GAMMA (rate in [0,1])
+												- MBD_TEMPORAL_TAU (reference belief in [0,1])
 	TRUST_DECISION			: 	ProjectedProbability
 									Mandatory Params:
 												- TRUST_DECISION_RTL_PP (projected prob. of RTL)
@@ -175,6 +183,8 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 			discountingOperator = trustmodelstructure.DisbeliefFavouringDiscount
 		}
 	}
+
+	mbdWindowing := newMbdWindowing(params)
 
 	//default func: ProjectedProbability with .5
 	trustDecider := func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision {
@@ -279,6 +289,7 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 		fusionOperator:      fusionOperator,
 		fusionWeightEgo:     fusionWeightEgo,
 		discountingOperator: discountingOperator,
+		mbdWindowing:        mbdWindowing,
 		trustDecision:       trustDecider,
 		camQuantifier:       t.camQuantifier,
 	}, nil
