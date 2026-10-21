@@ -17,6 +17,10 @@ const (
 	mbdWindowTemporal mbdWindowWeighting = "temporal" // Temporal-ATL, Bassi et al., VTC2026-Spring, eq. (1)
 )
 
+// mbdTemporalStartUncertainty: the temporal window starts with the first opinion below this uncertainty;
+// nearly vacuous opinions before it carry no evidence and would start b_t at about 0
+const mbdTemporalStartUncertainty = 0.9
+
 // mbdWindowing combines the recent MBD opinions into the opinion V_ego -> C_x_x
 type mbdWindowing struct {
 	weighting mbdWindowWeighting
@@ -26,6 +30,7 @@ type mbdWindowing struct {
 
 	window   []subjectivelogic.QueryableOpinion
 	temporal subjectivelogic.QueryableOpinion
+	belief   float64 // b_t, not limited to 1 - u_t
 }
 
 // newMbdWindowing reads MBD_WINDOW_WEIGHTING, MBD_WINDOW_SIZE, MBD_TEMPORAL_GAMMA and MBD_TEMPORAL_TAU (see OnNewVehicle)
@@ -103,22 +108,24 @@ func (w *mbdWindowing) add(opinion subjectivelogic.QueryableOpinion) subjectivel
 	return &mean
 }
 
-// addTemporal: b_t = b_{t-1} - gamma*(tau - b_new) if in [0,1], else b_{t-1}; u_t = u_new; d_t = 1 - b_t - u_t
+// addTemporal: b_t = b_{t-1} - gamma*(1 - u_new)*(tau - b_new) if in [0,1], else b_{t-1}; u_t = u_new; d_t = 1 - b_t - u_t.
+// The factor 1 - u_new is not in the paper: an uncertain opinion lacks evidence rather than deviating, so it hardly
+// changes b_t, instead of turning into disbelief once the uncertainty drops.
 func (w *mbdWindowing) addTemporal(opinion subjectivelogic.QueryableOpinion) subjectivelogic.QueryableOpinion {
-	//start with the first opinion that is not full uncertainty
+	//start with the first opinion that carries evidence
 	if w.temporal == nil {
-		if opinion.Uncertainty() < 1 {
+		if opinion.Uncertainty() < mbdTemporalStartUncertainty {
 			w.temporal = opinion
+			w.belief = opinion.Belief()
 		}
 		return opinion
 	}
-	belief := w.temporal.Belief()
-	if candidate := belief - w.gamma*(w.tau-opinion.Belief()); candidate >= 0 && candidate <= 1 {
-		belief = candidate
+	if candidate := w.belief - w.gamma*(1-opinion.Uncertainty())*(w.tau-opinion.Belief()); candidate >= 0 && candidate <= 1 {
+		w.belief = candidate
 	}
 	uncertainty := opinion.Uncertainty()
-	//not covered by the paper: keep b_t + u_t <= 1
-	belief = min(belief, 1-uncertainty)
+	//not covered by the paper: keep b_t + u_t <= 1 in the result only, so an uncertain opinion does not erase b_t
+	belief := min(w.belief, 1-uncertainty)
 	temporal, err := subjectivelogic.NewOpinion(belief, max(0, 1-belief-uncertainty), uncertainty, opinion.BaseRate())
 	if err != nil {
 		return opinion

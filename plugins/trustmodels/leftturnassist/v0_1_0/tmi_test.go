@@ -187,10 +187,30 @@ func TestMbdWindowTemporal(t *testing.T) {
 		[][]float64{{0.9, 0.0, 0.1}, {0.0, 0.9, 0.1}, {0.9, 0.0, 0.1}, {1.0, 0.0, 0.0}, {0.0, 0.0, 1.0}},
 		[][]float64{
 			{0.9, 0.0, 0.1},
-			{0.45, 0.45, 0.1}, // 0.9 - 0.5*(0.9-0)
-			{0.45, 0.45, 0.1}, // b_new = tau
-			{0.5, 0.5, 0.0},   // 0.45 - 0.5*(0.9-1)
-			{0.0, 0.0, 1.0},   // limited to 1-u
+			{0.495, 0.405, 0.1}, // 0.9 - 0.5*(1-0.1)*(0.9-0)
+			{0.495, 0.405, 0.1}, // b_new = tau
+			{0.545, 0.455, 0.0}, // 0.495 - 0.5*(1-0)*(0.9-1)
+			{0.0, 0.0, 1.0},     // limited to 1-u; b_t unchanged, as u_new = 1
+		})
+}
+
+func TestMbdWindowTemporalStart(t *testing.T) {
+	mbdUpdates(t, map[string]string{"MBD_WINDOW_WEIGHTING": "temporal", "MBD_TEMPORAL_GAMMA": "0.5", "MBD_TEMPORAL_TAU": "0.5"},
+		[][]float64{{0.0, 0.01, 0.99}, {0.9, 0.0, 0.1}, {0.9, 0.0, 0.1}},
+		[][]float64{
+			{0.0, 0.01, 0.99}, // nearly vacuous: passed through, the window does not start
+			{0.9, 0.0, 0.1},   // the window starts here
+			{0.9, 0.0, 0.1},   // 0.9 - 0.5*0.9*(0.5-0.9) > 1: kept
+		})
+}
+
+func TestMbdWindowTemporalUncertainOpinion(t *testing.T) {
+	mbdUpdates(t, map[string]string{"MBD_WINDOW_WEIGHTING": "temporal", "MBD_TEMPORAL_GAMMA": "0.5", "MBD_TEMPORAL_TAU": "0.5"},
+		[][]float64{{0.9, 0.0, 0.1}, {0.5, 0.0, 0.5}, {0.9, 0.0, 0.1}},
+		[][]float64{
+			{0.9, 0.0, 0.1},
+			{0.5, 0.0, 0.5}, // b_t = 0.9 limited to 1-u in the result only
+			{0.9, 0.0, 0.1}, // b_t = 0.9 kept, no disbelief from the uncertain opinion
 		})
 }
 
