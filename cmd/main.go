@@ -11,6 +11,7 @@ import (
 	"github.com/vs-uulm/go-taf/internal/version"
 	"github.com/vs-uulm/go-taf/pkg/communication"
 	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/listener"
 	"github.com/vs-uulm/go-taf/pkg/manager"
 	"github.com/vs-uulm/go-taf/pkg/trustassessment"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel"
@@ -108,6 +109,18 @@ func main() {
 	trustAssessmentManager.SetManagers(managers)
 	trustModelManager.SetManagers(managers)
 	trustSourceManager.SetManagers(managers)
+
+	//Log the trust relationships of every TMI version to a file, if TAF_TMI_LOG names one
+	tmiLog, err := listener.NewTMILogFromEnv()
+	if err != nil {
+		logger.Error("Error creating TMI log", "Error", err)
+		os.Exit(-1)
+		return
+	}
+	if tmiLog != nil {
+		trustAssessmentManager.AddTMIListener(tmiLog)
+		logger.Info("Writing the TMI log to " + os.Getenv(listener.TMILogEnvVariable))
+	}
 
 	//Let's go
 	go communicationInterface.Run()
