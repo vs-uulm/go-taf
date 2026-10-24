@@ -1,14 +1,15 @@
 <template>
   <v-app>
     <v-toolbar density="compact" :elevation="1">
-      <span class="ml-3 text-h6">
+      <span class="ml-3 text-title-large">
         <router-link to="/" :style="`color: ${theme.global.current.value.dark ? 'white' : 'black'}; text-decoration: none`">
           <v-icon start icon="mdi-graph-outline" />
           TAF Web UI
         </router-link>
       </span>
 
-      <v-btn-toggle class="ml-4">
+      <!-- the buttons are transparent on the toolbar and only the page shown is highlighted (see nav-toggle below) -->
+      <v-btn-toggle class="ml-4 nav-toggle" variant="text">
           <v-btn to="/tmis" title="TMIs">
             <v-icon start>mdi-rhombus-outline</v-icon>
             <span class="hidden-sm-and-down">TMIs</span>
@@ -24,7 +25,7 @@
         {{ connectionState }}
       </v-chip>
 
-      <v-spacer />
+      <!-- takes the free space, so that pages can grow their toolbar content (e.g., the timeline of the TMI overview) -->
       <div id="toolbar" class="d-flex flex-grow-1 justify-end">
       </div>
 
@@ -40,6 +41,17 @@
   </v-app>
 </template>
 
+<style>
+/* the button of the page shown stands out from the toolbar like a selected tab, without the default darker overlay */
+.nav-toggle .v-btn--active {
+  background: rgb(var(--v-theme-surface));
+}
+
+.nav-toggle .v-btn--active > .v-btn__overlay {
+  opacity: 0;
+}
+</style>
+
 <script lang="ts" setup>
 import { useTheme } from 'vuetify';
 import { ref, provide } from 'vue';
@@ -51,7 +63,8 @@ import AlertDialog from './components/AlertDialog.vue';
 
 const dialog = ref<InstanceType<typeof AlertDialog> | null>(null);
 
-let connectionState = ref('');
+const connectionState = ref('');
+let hasConnected = false;
 
 function dialogCallHelper(fn: 'alert' | 'confirm' | 'prompt' | 'select', title: string, message: string = '', options: AlertOptions = {}): Promise<any> {
   if (!dialog.value) {
@@ -78,6 +91,26 @@ provide(Dialog, {
 
 const store = useAppStore();
 
+// messages are applied in batches, so that the UI is re-rendered at most once per interval instead of once per message
+const MESSAGE_BATCH_INTERVAL = 100;
+let queuedMessages: string[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushMessages() {
+  flushTimer = null;
+  const batch = queuedMessages;
+  queuedMessages = [];
+  const msgs = [];
+  for (const data of batch) {
+    try {
+      msgs.push(JSON.parse(data));
+    } catch (e) {
+      console.log('[ws] error', e);
+    }
+  }
+  store.processMessages(msgs);
+}
+
 function connect() {
   const ws = new WebSocket(`${location.origin.replace(/^http/, 'ws')}/ws`);
 
@@ -87,6 +120,11 @@ function connect() {
     console.log('[ws] connected');
     connectionState.value = 'connected';
     store.setSocket(ws);
+    // events may have been missed while disconnected, so fetch the current state again
+    if (hasConnected) {
+      store.resync();
+    }
+    hasConnected = true;
   });
   ws.addEventListener('close', () => {
     console.log('[ws] closed, reconnect in 1 sec');
@@ -100,10 +138,9 @@ function connect() {
     ws.close();
   });
   ws.addEventListener('message', (evt) => {
-    try {
-      store.processMessage(JSON.parse(evt.data));
-    } catch (e) {
-      console.log('[ws] error', e);
+    queuedMessages.push(evt.data);
+    if (flushTimer === null) {
+      flushTimer = setTimeout(flushMessages, MESSAGE_BATCH_INTERVAL);
     }
   });
 }
@@ -114,7 +151,8 @@ store.init();
 const theme = useTheme();
 
 function toggleTheme() {
-  theme.global.name.value = theme.global.current.value.dark ? 'light' : 'dark';
-  localStorage.setItem('theme', theme.global.name.value);
+  const name = theme.global.current.value.dark ? 'light' : 'dark';
+  theme.change(name);
+  localStorage.setItem('theme', name);
 }
 </script>

@@ -92,8 +92,18 @@ type Content struct {
 }
 
 type ObservationSet struct {
-	Check    float64 `json:"check"`
-	TargetID float64 `json:"targetId"`
+	Check                    *float64 `json:"check,omitempty"`
+	DistanceToRoadEdgeError  *float64 `json:"distance_to_road_edge_error,omitempty"`
+	ReceiverTimeError        *float64 `json:"receiver_time_error,omitempty"`
+	RelativePositionErrorX   *float64 `json:"relative_position_error_x,omitempty"`
+	RelativePositionErrorY   *float64 `json:"relative_position_error_y,omitempty"`
+	SenderAccelerationErrorX *float64 `json:"sender_acceleration_error_x,omitempty"`
+	SenderAccelerationErrorY *float64 `json:"sender_acceleration_error_y,omitempty"`
+	SenderHeadingErrorCos    *float64 `json:"sender_heading_error_cos,omitempty"`
+	SenderHeadingErrorSin    *float64 `json:"sender_heading_error_sin,omitempty"`
+	SenderSpeedErrorX        *float64 `json:"sender_speed_error_x,omitempty"`
+	SenderSpeedErrorY        *float64 `json:"sender_speed_error_y,omitempty"`
+	TargetID                 float64  `json:"targetId"`
 }
 
 type V2XPduEvidence struct {

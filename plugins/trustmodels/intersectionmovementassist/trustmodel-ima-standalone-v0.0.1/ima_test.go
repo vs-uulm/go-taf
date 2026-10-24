@@ -2,14 +2,15 @@ package trustmodel_ima_standalone_v0_0_1
 
 import (
 	"fmt"
+	"log/slog"
+	"testing"
+
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/config"
 	"github.com/vs-uulm/go-taf/pkg/core"
 	internaltlee "github.com/vs-uulm/go-taf/pkg/tlee"
 	"github.com/vs-uulm/go-taf/pkg/trustdecision"
 	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelupdate"
-	"log/slog"
-	"testing"
 )
 
 /*
@@ -68,7 +69,7 @@ func TestUntrustworthy(t *testing.T) {
 func RunTMI(t *testing.T, update1 map[core.EvidenceType]interface{}, update2 map[core.EvidenceType]interface{}) {
 
 	tafContext := createTafContext()
-	tlee := internaltlee.SpawnNewTLEE(tafContext.Logger, "", false)
+	tlee := internaltlee.SpawnNewTLEE(tafContext.Logger)
 	tmt := CreateTrustModelTemplate("IMA_STANDALONE", "0.0.1")
 
 	// Spawn spawner
@@ -129,7 +130,6 @@ func createTafContext() core.TafContext {
 		Logger:        slog.Default(),
 		Context:       nil,
 		Identifier:    "taf",
-		Crypto:        nil,
 	}
 }
 
@@ -139,7 +139,7 @@ func printATLs(t *testing.T, atls map[string]subjectivelogic.QueryableOpinion, r
 		decision := "no decision"
 		rtl, exists := RTLmap[proposition]
 		if exists {
-			switch trustdecision.Decide(opinion, rtl) {
+			switch trustdecision.DecideByProjectedProbability(opinion, rtl) {
 			case core.TRUSTWORTHY:
 				decision = "trustworthy"
 			default:

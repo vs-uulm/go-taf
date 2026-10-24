@@ -24,6 +24,7 @@ const (
 	HANDLE_MBD_UNSUBSCRIBE_RESPONSE
 	HANDLE_TCH_NOTIFY
 	HANDLE_V2X_CPM
+	HANDLE_V2X_CAM
 	HANDLE_V2X_NTM
 	HANDLE_TMI_INIT
 	HANDLE_TMI_UPDATE
@@ -51,6 +52,7 @@ func (c CommandType) String() string {
 		"HANDLE_MBD_UNSUBSCRIBE_RESPONSE",
 		"HANDLE_TCH_NOTIFY",
 		"HANDLE_V2X_CPM",
+		"HANDLE_V2X_CAM",
 		"HANDLE_V2X_NTM",
 		"HANDLE_TMI_INIT",
 		"HANDLE_TMI_UPDATE",
@@ -62,4 +64,14 @@ func (c CommandType) String() string {
 
 type Command interface {
 	Type() CommandType
+}
+
+// Track wraps handle so that the settlement tracker is marked done once handle returns,
+// letting callers opt a command handler into settlement tracking without duplicating the
+// wrapping logic at each call site.
+func Track(settlement *SettlementTracker, handle func(Command)) func(Command) {
+	return func(cmd Command) {
+		defer settlement.Done(nil)
+		handle(cmd)
+	}
 }

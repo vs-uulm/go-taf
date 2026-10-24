@@ -17,6 +17,10 @@
         "type": "string",
         "description": "The message type to be used by the receiver to process this message."
       },
+      "awaitSettlement": {
+        "type": "boolean",
+        "description": "When true, defer processing until previously admitted work has settled."
+      },
       "responseId": {
         "type": "string",
         "description": "The unique identifier to be repeated in the response for linking request and response.",

@@ -2,9 +2,11 @@ package tlee
 
 import (
 	"errors"
-	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 	"log/slog"
+	"math"
+
+	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
+	"github.com/vs-uulm/go-taf/pkg/trustmodel/trustmodelstructure"
 )
 
 /*
@@ -12,20 +14,21 @@ TLEE represents an internal TLEE as part of the TAF that can be used for debuggi
 TLEE implementation.
 */
 type TLEE struct {
-	logger        *slog.Logger
-	debuggingMode bool
+	logger *slog.Logger
 }
 
 type CurrentEntry struct {
 	source      string
 	destination string
 	opinions    []subjectivelogic.Opinion
+	// weights holds the fusion weight of each opinion (the weight of the first edge of the path it was derived over),
+	// NaN if that edge is not part of the adjacency list
+	weights []float64
 }
 
-func SpawnNewTLEE(logger *slog.Logger, filePath string, debuggingMode bool) *TLEE {
+func SpawnNewTLEE(logger *slog.Logger) *TLEE {
 	return &TLEE{
-		logger:        logger,
-		debuggingMode: debuggingMode,
+		logger: logger,
 	}
 
 }
@@ -34,8 +37,28 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 	results := make(map[string]subjectivelogic.QueryableOpinion)
 
 	var ff func(opinion1 *subjectivelogic.Opinion, opinion2 *subjectivelogic.Opinion) (subjectivelogic.Opinion, error)
+	proportional := false
+
+	edgeWeights := make(map[string]float64)
+	for _, entry := range structure.AdjacencyList() {
+		for _, target := range entry.TargetNodes() {
+			edgeWeights[entry.SourceNode()+":"+target] = entry.FusionWeight(target)
+		}
+	}
+	fusionWeight := func(key string) float64 {
+		if weight, exists := edgeWeights[key]; exists {
+			return weight
+		}
+		return math.NaN()
+	}
 
 	switch structure.Operator() {
+	case trustmodelstructure.ConsensusAndCompromiseFusion:
+		ff = subjectivelogic.ConsensusCompromiseFusion
+	case trustmodelstructure.EpistemicCumulativeFusion:
+		ff = subjectivelogic.CumulativeEpistemicFusion
+	case trustmodelstructure.ProportionalFusion:
+		proportional = true
 	case trustmodelstructure.AveragingFusion:
 		ff = subjectivelogic.AveragingFusion
 	case trustmodelstructure.ConstraintFusion:
@@ -83,9 +106,11 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 					source:      relationship.Source(),
 					destination: relationship.Destination(),
 					opinions:    []subjectivelogic.Opinion{opinion},
+					weights:     []float64{fusionWeight(key)},
 				}
 			} else {
 				entry.opinions = append(entry.opinions, opinion)
+				entry.weights = append(entry.weights, fusionWeight(key))
 				current[key] = entry
 			}
 
@@ -124,11 +149,41 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 				if len(entry.opinions) > 1 {
 					// fuse
 					var prev subjectivelogic.Opinion
+					var prevWeight float64
+					if proportional {
+						totalWeight := 0.0
+						for _, weight := range entry.weights {
+							if math.IsNaN(weight) {
+								return nil, errors.New("missing fusion weight for opinions on edge " + key + ", as the first edge of a path is not part of the adjacency list")
+							}
+							if weight < 0 {
+								return nil, errors.New("negative fusion weight for opinions on edge " + key)
+							}
+							totalWeight += weight
+						}
+						if totalWeight <= 0 {
+							return nil, errors.New("fusion weights for opinions on edge " + key + " sum to zero")
+						}
+					}
 					for i, v := range entry.opinions {
 						if i == 0 {
 							prev = v
+							prevWeight = entry.weights[i]
 						} else {
-							fused, err := ff(&prev, &v)
+							var fused subjectivelogic.Opinion
+							var err error
+							if proportional {
+								// renormalizing the proportions in each pairwise step yields the weighted mean of all opinions
+								weight := entry.weights[i]
+								if prevWeight+weight == 0 {
+									fused = prev
+								} else {
+									fused, err = subjectivelogic.ProportionalFusion(&prev, &v, prevWeight/(prevWeight+weight), weight/(prevWeight+weight))
+								}
+								prevWeight += weight
+							} else {
+								fused, err = ff(&prev, &v)
+							}
 							if err != nil {
 								return nil, errors.New("cannot fuse opinions" + err.Error())
 							}
@@ -139,6 +194,7 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 
 					// store fused opinion
 					entry.opinions = []subjectivelogic.Opinion{prev}
+					entry.weights = []float64{prevWeight}
 					current[key] = entry
 				}
 			}
@@ -196,6 +252,21 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 
 			var discounted subjectivelogic.Opinion
 
+			var discountOperator func(opinion1 *subjectivelogic.Opinion, opinion2 *subjectivelogic.Opinion) (subjectivelogic.Opinion, error)
+
+			switch structure.DiscountOperator() {
+			case trustmodelstructure.OppositeBeliefDiscount:
+				discountOperator = subjectivelogic.TrustDiscountingOppositeBelief
+			case trustmodelstructure.BaseRateSensitiveDiscount:
+				discountOperator = subjectivelogic.TrustDiscounting
+			case trustmodelstructure.DisbeliefFavouringDiscount:
+				discountOperator = subjectivelogic.TrustDiscountingDisbeliefFavouring
+			case trustmodelstructure.UncertaintyFavouringDiscount:
+				discountOperator = subjectivelogic.TrustDiscountingUncertaintyFavouring
+			default:
+				return nil, errors.New("Unsupported Discount Operator.")
+			}
+
 			switch len(opinions) {
 			case 0:
 				return nil, errors.New("an out of opinions without result")
@@ -204,7 +275,8 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 				results[scope] = &opinions[0]
 
 			case 2:
-				tmp, err := subjectivelogic.TrustDiscounting(&opinions[0], &opinions[1])
+
+				tmp, err := discountOperator(&opinions[0], &opinions[1])
 				if err != nil {
 					return nil, errors.New("subjective logic error")
 				}
@@ -224,9 +296,11 @@ func (t *TLEE) RunTLEE(trustmodelID string, version int, fingerprint uint32, str
 					source:      targetSource,
 					destination: targetDestination,
 					opinions:    []subjectivelogic.Opinion{discounted},
+					weights:     []float64{fusionWeight(path[0])},
 				}
 			} else {
 				entry.opinions = append(entry.opinions, discounted)
+				entry.weights = append(entry.weights, fusionWeight(path[0]))
 				current[targetKey] = entry
 			}
 		}

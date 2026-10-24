@@ -16,6 +16,10 @@
         "type": "string",
         "description": "The message type to be used by the receiver to process this message."
       },
+      "awaitSettlement": {
+        "type": "boolean",
+        "description": "When true, defer processing until previously admitted work has settled."
+      },
       "message": {
         "type": "object",
         "description": "The actual application message of type messageType."

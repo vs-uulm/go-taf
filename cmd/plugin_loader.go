@@ -13,6 +13,8 @@ import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/intersectionmovementassi
 import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/intersectionmovementassist/trustmodel-ima-standalone-v0.0.1"
 import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/intersectionmovementassist/trustmodel-ima-standalone-v0.0.2"
 import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/intersectionmovementassist/trustmodel-ntm-standalone_v0.0.1"
+import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/leftturnassist"
+import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/leftturnassist/v0_1_0"
 import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/smtd"
 import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/smtd/trustmodel-smtd-v0.0.1"
 import _ "github.com/vs-uulm/go-taf/plugins/trustmodels/taskoffloading"

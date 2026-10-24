@@ -3,9 +3,15 @@ package trustmodelstructure
 import (
 	"encoding/json"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
-	"github.com/vs-uulm/taf-tlee-interface/pkg/trustmodelstructure"
 	"strings"
 )
+
+// The TrustRelationship between a Trustor (getSource()) and the Trustee (getDestination()) and its Trust Opinion. A TrustRelationship is always bound to a specific scope it is defined in.
+type TrustRelationship interface {
+	Source() string
+	Destination() string
+	Opinion() subjectivelogic.QueryableOpinion
+}
 
 type TrustRelationshipDTO struct {
 	source      string
@@ -33,7 +39,7 @@ func NewTrustRelationshipDTO(source string, destination string, opinion subjecti
 	}
 }
 
-func DumpValues(values map[string][]trustmodelstructure.TrustRelationship) string {
+func DumpValues(values map[string][]TrustRelationship) string {
 	result := []string{"++ Values ++"}
 	for scope, rels := range values {
 		for _, rel := range rels {

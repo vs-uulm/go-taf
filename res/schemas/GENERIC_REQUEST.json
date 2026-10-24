@@ -17,6 +17,10 @@
         "type": "string",
         "description": "The message type to be used by the receiver to process this message."
       },
+      "awaitSettlement": {
+        "type": "boolean",
+        "description": "When true, defer processing until previously admitted work has settled."
+      },
       "responseTopic": {
         "type": "string",
         "description": "The Kafka topic to be used to send a response to this request."

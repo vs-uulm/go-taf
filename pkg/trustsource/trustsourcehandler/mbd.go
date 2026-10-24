@@ -97,7 +97,11 @@ func (h *MbdHandler) HandleNotify(cmd command.HandleNotify[mbdmsg.MBDNotify]) {
 		//Discard old evidence and always create a new map
 
 		h.latestSubscriptionEvidence[id] = make(map[core.EvidenceType]interface{})
-		h.latestSubscriptionEvidence[id][core.MBD_MISBEHAVIOR_REPORT] = int(observation.Check)
+		if observation.Check != nil {
+			h.latestSubscriptionEvidence[id][core.MBD_MISBEHAVIOR_REPORT] = int(*observation.Check)
+		} else {
+			addMbdDoubleEvidence(h.latestSubscriptionEvidence[id], observation)
+		}
 		updatedTrustees[id] = true
 	}
 
@@ -109,6 +113,8 @@ func (h *MbdHandler) HandleNotify(cmd command.HandleNotify[mbdmsg.MBDNotify]) {
 		for trustee := range updatedTrustees {
 			for _, tsq := range tsqs {
 				if tsq.TrustSource != core.MBD {
+					continue
+				} else if !hasRequiredMbdEvidence(h.latestSubscriptionEvidence[trustee], tsq.Evidence) {
 					continue
 				} else if tsq.Trustor == "V_ego" && tsq.Trustee == "C_*_*" {
 					ato := tsq.Quantifier(h.latestSubscriptionEvidence[trustee])
@@ -127,5 +133,50 @@ func (h *MbdHandler) HandleNotify(cmd command.HandleNotify[mbdmsg.MBDNotify]) {
 				h.tam.DispatchToWorker(sess, tmiID, tmiUpdateCmd)
 			}
 		}
+	}
+}
+
+func hasRequiredMbdEvidence(evidence map[core.EvidenceType]interface{}, required []core.EvidenceType) bool {
+	for _, evidenceType := range required {
+		if evidenceType.Source() != core.MBD {
+			continue
+		}
+		if _, ok := evidence[evidenceType]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func addMbdDoubleEvidence(evidence map[core.EvidenceType]interface{}, observation mbdmsg.ObservationSet) {
+	if observation.RelativePositionErrorX != nil {
+		evidence[core.MBD_RELATIVE_POSITION_ERROR_X] = *observation.RelativePositionErrorX
+	}
+	if observation.RelativePositionErrorY != nil {
+		evidence[core.MBD_RELATIVE_POSITION_ERROR_Y] = *observation.RelativePositionErrorY
+	}
+	if observation.SenderSpeedErrorX != nil {
+		evidence[core.MBD_SENDER_SPEED_ERROR_X] = *observation.SenderSpeedErrorX
+	}
+	if observation.SenderSpeedErrorY != nil {
+		evidence[core.MBD_SENDER_SPEED_ERROR_Y] = *observation.SenderSpeedErrorY
+	}
+	if observation.SenderAccelerationErrorX != nil {
+		evidence[core.MBD_SENDER_ACCELERATION_ERROR_X] = *observation.SenderAccelerationErrorX
+	}
+	if observation.SenderAccelerationErrorY != nil {
+		evidence[core.MBD_SENDER_ACCELERATION_ERROR_Y] = *observation.SenderAccelerationErrorY
+	}
+	if observation.DistanceToRoadEdgeError != nil {
+		evidence[core.MBD_DISTANCE_TO_ROAD_EDGE_ERROR] = *observation.DistanceToRoadEdgeError
+	}
+	if observation.ReceiverTimeError != nil {
+		evidence[core.MBD_RECEIVER_TIME_ERROR] = *observation.ReceiverTimeError
+	}
+	if observation.SenderHeadingErrorSin != nil {
+		evidence[core.MBD_SENDER_HEADING_ERROR_SIN] = *observation.SenderHeadingErrorSin
+	}
+	if observation.SenderHeadingErrorCos != nil {
+		evidence[core.MBD_SENDER_HEADING_ERROR_COS] = *observation.SenderHeadingErrorCos
 	}
 }
