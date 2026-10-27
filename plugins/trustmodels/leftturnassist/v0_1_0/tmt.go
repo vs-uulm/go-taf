@@ -123,17 +123,17 @@ OnNewVehicle spawns a new TMI upon an arriving vehicle. It has the following opt
 								Belief
 									Mandatory Params:
 												- TRUST_DECISION_K (b >= k)
-								RTL_RiskBased
+								RTL_RiskBased, RTL_Optuna (same decision; the RTL is set manually or found by Optuna)
 									Mandatory Params:
-												- TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (manual RTL, each in [0,1])
+												- TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (RTL, each in [0,1])
 									Optional Params:
 												- TRUST_DECISION_LOGIC (Components (default) | ProjectedProbability)
-								RTL_RandomForest, RTL_Optuna: the trained model of this TAF configuration is used (panics if it cannot be read),
-								<TRUST_DECISION_MODEL_DIR>/<TD>-<TF>-<TQM>[-<MBD window>]/rf_model.json (RF) or rtl_optuna.json (Optuna),
-								e.g. /opt/rtl-models/BR-ACF-bspline/rf_model.json, /opt/rtl-models/BR-ACF-bspline-temporal-g0.2-t0.5/
+								RTL_RandomForest: the trained model of this TAF configuration is used (panics if it cannot be read),
+								<TRUST_DECISION_MODEL_DIR>/<TD>-<TF>-<TQM>[-<MBD window>]/rf_model.json,
+								e.g. /opt/rtl-models/BR-ACF-bspline/rf_model.json, /opt/rtl-models/BR-ACF-bspline-temporal-g0.2-t0.5/rf_model.json
 									Optional Params:
 												- TRUST_DECISION_MODEL_DIR (default /opt/rtl-models)
-												- TRUST_DECISION_RF_MODEL / TRUST_DECISION_OPTUNA_MODEL (explicit model path, overrides the selection)
+												- TRUST_DECISION_RF_MODEL (explicit model path, overrides the selection)
 												- TRUST_DECISION_LOGIC (Components (default) | ProjectedProbability)
 */
 func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params map[string]string) (core.TrustModelInstance, error) {

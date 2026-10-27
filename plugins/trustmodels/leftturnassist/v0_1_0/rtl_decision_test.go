@@ -81,6 +81,8 @@ func TestInvalidParamPanics(t *testing.T) {
 		"risk not a number":   {risk("x", "0.2", "0.4"), "Could not parse TRUST_DECISION_BT"},
 		"bad logic":           {badLogic, "Could not parse TRUST_DECISION_LOGIC"},
 		"bad logic before RF": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_LOGIC": "foo"}, "Could not parse TRUST_DECISION_LOGIC"},
+		"Optuna without RTL":  {map[string]string{"TRUST_DECISION": "RTL_Optuna"}, "Missing value: TRUST_DECISION_BT"},
+		"Optuna above range":  {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_BT": "1.5", "TRUST_DECISION_DT": "1", "TRUST_DECISION_UT": "1"}, "Could not parse TRUST_DECISION_BT"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -107,14 +109,10 @@ func TestUnreadableModelPanics(t *testing.T) {
 	}{
 		"missing RF file":     {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": "/nope/rf_model.json"}, "not found"},
 		"no model for config": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "TRUST_DECISION_MODEL_DIR": "/nope"}, "/nope/BR-ACF-bspline/rf_model.json"},
-		"TQM not set":         {map[string]string{"TRUST_DECISION": "RTL_Optuna"}, "TRUST_QUANTIFICATION_MECHANISM_MBD is not set"},
-		"no model for new op": {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "FUSION_OPERATOR": "New_Fusion", "TRUST_DECISION_MODEL_DIR": "/nope"}, "BR-New_Fusion-bspline"},
-		"missing Optuna file": {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": "/nope/rtl_optuna.json"}, "not found"},
+		"TQM not set":         {map[string]string{"TRUST_DECISION": "RTL_RandomForest"}, "TRUST_QUANTIFICATION_MECHANISM_MBD is not set"},
+		"no model for new op": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "FUSION_OPERATOR": "New_Fusion", "TRUST_DECISION_MODEL_DIR": "/nope"}, "BR-New_Fusion-bspline"},
 		"model is a dir":      {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": dir}, "is a directory"},
 		"corrupt RF model":    {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": write("bad_rf.json", "{bad")}, "corrupt RF model"},
-		"corrupt Optuna":      {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": write("bad_optuna.json", "{bad")}, "corrupt Optuna model"},
-		"Optuna without rtl":  {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": write("no_rtl.json", `{}`)}, `no "rtl" field`},
-		"Optuna out of range": {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": write("range.json", `{"rtl": {"Bt": 1.5, "Dt": 1, "Ut": 1}}`)}, "outside [0,1]"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -128,20 +126,25 @@ func TestUnreadableModelPanics(t *testing.T) {
 	}
 }
 
-func TestRiskBasedDecides(t *testing.T) {
-	risk := map[string]string{"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.225", "TRUST_DECISION_UT": "0.4"}
-	if decide(t, risk, probe) != core.NOT_TRUSTWORTHY {
-		t.Error("risk should reject probe")
-	}
-	if decide(t, risk, op(0.8, 0.1, 0.1)) != core.TRUSTWORTHY {
-		t.Error("components should accept (0.8, 0.1, 0.1)")
-	}
-	risk["TRUST_DECISION_LOGIC"] = "ProjectedProbability"
-	if decide(t, risk, op(0.8, 0.1, 0.1)) != core.NOT_TRUSTWORTHY {
-		t.Error("gray zone (P = 0.85, PUT = 0.80, PTT = 0.90) should reject")
-	}
-	if decide(t, risk, op(0, 0, 1)) != core.UNDECIDABLE {
-		t.Error("u = 1 should be undecidable")
+// TestFixedRTLDecides: risk-based and Optuna decide with the RTL given as parameters.
+func TestFixedRTLDecides(t *testing.T) {
+	for _, kind := range []string{"RTL_RiskBased", "RTL_Optuna"} {
+		t.Run(kind, func(t *testing.T) {
+			p := map[string]string{"TRUST_DECISION": kind, "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.225", "TRUST_DECISION_UT": "0.4"}
+			if decide(t, p, probe) != core.NOT_TRUSTWORTHY {
+				t.Error("should reject probe")
+			}
+			if decide(t, p, op(0.8, 0.1, 0.1)) != core.TRUSTWORTHY {
+				t.Error("components should accept (0.8, 0.1, 0.1)")
+			}
+			p["TRUST_DECISION_LOGIC"] = "ProjectedProbability"
+			if decide(t, p, op(0.8, 0.1, 0.1)) != core.NOT_TRUSTWORTHY {
+				t.Error("gray zone (P = 0.85, PUT = 0.80, PTT = 0.90) should reject")
+			}
+			if decide(t, p, op(0, 0, 1)) != core.UNDECIDABLE {
+				t.Error("u = 1 should be undecidable")
+			}
+		})
 	}
 }
 
@@ -169,20 +172,21 @@ func TestConfigName(t *testing.T) {
 	}
 }
 
-// TestModelPerConfig: each configuration reads its own Optuna model; an explicit path overrides the selection.
+// TestModelPerConfig: each configuration reads its own Random Forest model; an explicit path overrides the selection.
 func TestModelPerConfig(t *testing.T) {
 	dir := t.TempDir()
+	// write stores a forest with a single leaf, which predicts the RTL (bt, 1, 1) for every ATL.
 	write := func(config string, bt float64) {
 		os.MkdirAll(dir+"/"+config, 0o755)
-		data := fmt.Sprintf(`{"rtl": {"Bt": %g, "Dt": 1, "Ut": 1}}`, bt)
-		if err := os.WriteFile(dir+"/"+config+"/rtl_optuna.json", []byte(data), 0o644); err != nil {
+		data := fmt.Sprintf(`{"n_features": 3, "n_outputs": 3, "trees": [{"nodes": [{"f": -1, "v": [%g, 1, 1]}]}]}`, bt)
+		if err := os.WriteFile(dir+"/"+config+"/rf_model.json", []byte(data), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	write("BR-ACF-bspline", 0.9) // rejects b = 0.85
 	write("UF-WBF-mlp", 0.8)     // accepts b = 0.85
 	atl := op(0.85, 0.05, 0.1)
-	base := map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_MODEL_DIR": dir}
+	base := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_MODEL_DIR": dir}
 	with := func(extra map[string]string) map[string]string {
 		p := map[string]string{}
 		for k, v := range base {
@@ -201,11 +205,11 @@ func TestModelPerConfig(t *testing.T) {
 	if decide(t, uf, atl) != core.TRUSTWORTHY {
 		t.Error("UF-WBF-mlp (bt 0.8) should accept")
 	}
-	uf["TRUST_DECISION_OPTUNA_MODEL"] = dir + "/BR-ACF-bspline/rtl_optuna.json"
+	uf["TRUST_DECISION_RF_MODEL"] = dir + "/BR-ACF-bspline/rf_model.json"
 	if decide(t, uf, atl) != core.NOT_TRUSTWORTHY {
 		t.Error("explicit path should override the selection")
 	}
-	if !strings.Contains(buf.String(), "UF-WBF-mlp/rtl_optuna.json") {
+	if !strings.Contains(buf.String(), "UF-WBF-mlp/rf_model.json") {
 		t.Error(buf.String())
 	}
 }
