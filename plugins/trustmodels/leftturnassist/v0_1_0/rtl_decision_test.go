@@ -7,11 +7,15 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"strings"
 	"testing"
+	"weak"
 
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
+
+	"github.com/vs-uulm/go-taf/plugins/trustmodels/leftturnassist/v0_1_0/rtl"
 )
 
 func op(b, d, u float64) subjectivelogic.QueryableOpinion {
@@ -98,8 +102,8 @@ func TestInvalidParamPanics(t *testing.T) {
 	}
 }
 
-// TestInvalidRFModelPanics: model content that is not a valid forest makes the TMI panic, also for a second vehicle
-// (the error is cached per content).
+// TestInvalidRFModelPanics: model content that is not a valid forest panics, both when a session with it is created
+// and when a vehicle's parameters pass it.
 func TestInvalidRFModelPanics(t *testing.T) {
 	tree := func(nodes string) string {
 		return `{"n_features": 3, "n_outputs": 3, "trees": [{"nodes": [` + nodes + `]}]}`
@@ -122,12 +126,17 @@ func TestInvalidRFModelPanics(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			params := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": c.content}
-			for vehicle := 1; vehicle <= 2; vehicle++ {
-				msg := panicMessage(t, params)
+			check := func(where, msg string) {
 				if !strings.HasPrefix(msg, "Could not parse TRUST_DECISION_RF_MODEL_PARAM: ") || !strings.Contains(msg, c.reason) {
-					t.Fatalf("vehicle %d: panic %q does not mention %q", vehicle, msg, c.reason)
+					t.Fatalf("%s: panic %q does not mention %q", where, msg, c.reason)
 				}
 			}
+			check("vehicle", panicMessage(t, params))
+			check("session", func() (msg string) {
+				defer func() { msg = fmt.Sprint(recover()) }()
+				newSession(params)
+				return ""
+			}())
 		})
 	}
 }
@@ -154,29 +163,67 @@ func TestFixedRTLDecides(t *testing.T) {
 	}
 }
 
-// rfTestRuns makes the model content of each run of TestRFModelFromParam unique (the model cache is global).
-var rfTestRuns int
+// newSession creates the spawner of a session with the given parameters, as Spawn does at TAS_INIT.
+func newSession(params map[string]string) DynamicTrustModelTemplateSpawner {
+	return NewDynamicTrustModelTemplateSpawner(CreateTrustModelTemplate("LTA", "0.1.0").(TrustModelTemplate), params)
+}
 
-// TestRFModelFromParam: the Random Forest decides with the model passed as content, and parses each model once.
-func TestRFModelFromParam(t *testing.T) {
+// decideInSession spawns a TMI for a new vehicle of the session (without own parameters, as the TAF does) and runs its
+// trust decision.
+func decideInSession(t *testing.T, session DynamicTrustModelTemplateSpawner, vehicle int, atl subjectivelogic.QueryableOpinion) core.TrustDecision {
+	t.Helper()
+	tmi, err := session.OnNewVehicle(fmt.Sprintf("veh_%d", vehicle), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tmi.(*TrustModelInstance).Decide("p", atl, nil)
+}
+
+// TestRFModelPerSession: the Random Forest decides with the model passed as content; a session parses its model once,
+// when it is created, and all its vehicles share it.
+func TestRFModelPerSession(t *testing.T) {
 	buf := captureLog(t)
-	rfTestRuns++
-	unique := strings.Repeat(" ", rfTestRuns) // whitespace after the JSON value: same model, new content
 	atl := op(0.85, 0.05, 0.1)
-	strict := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.9) + unique}
-	lenient := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.8) + unique}
+	strict := newSession(map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.9)})
+	lenient := newSession(map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.8)})
+	if n := strings.Count(buf.String(), "RTL model loaded"); n != 2 {
+		t.Errorf("want each session's model parsed when the session is created, got %d loads: %s", n, buf.String())
+	}
 	for vehicle := 1; vehicle <= 3; vehicle++ {
-		if decide(t, strict, atl) != core.NOT_TRUSTWORTHY {
+		if decideInSession(t, strict, vehicle, atl) != core.NOT_TRUSTWORTHY {
 			t.Error("bt 0.9 should reject b = 0.85")
 		}
-		if decide(t, lenient, atl) != core.TRUSTWORTHY {
+		if decideInSession(t, lenient, vehicle, atl) != core.TRUSTWORTHY {
 			t.Error("bt 0.8 should accept b = 0.85")
 		}
 	}
-	if decide(t, strict, op(0, 0, 1)) != core.UNDECIDABLE {
+	if decideInSession(t, strict, 4, op(0, 0, 1)) != core.UNDECIDABLE {
 		t.Error("u = 1 should be undecidable")
 	}
 	if n := strings.Count(buf.String(), "RTL model loaded"); n != 2 {
-		t.Errorf("want each of the 2 models parsed once, got %d loads: %s", n, buf.String())
+		t.Errorf("want no further parsing for the sessions' vehicles, got %d loads: %s", n, buf.String())
 	}
+	// a vehicle's own model content (not used by the TAF) is parsed for that vehicle
+	if decide(t, map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.8)}, atl) != core.TRUSTWORTHY {
+		t.Error("bt 0.8 should accept b = 0.85")
+	}
+}
+
+// TestRFModelFreedWithSession: nothing but the session and its TMIs holds the parsed model, so it is freed with them.
+func TestRFModelFreedWithSession(t *testing.T) {
+	model := func() weak.Pointer[rtl.Model] {
+		session := newSession(map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.9)})
+		decideInSession(t, session, 1, op(0.85, 0.05, 0.1))
+		return weak.Make(session.rfModel.model)
+	}()
+	alive := newSession(map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.8)})
+	aliveModel := weak.Make(alive.rfModel.model)
+	runtime.GC()
+	if model.Value() != nil {
+		t.Fatal("the model is still reachable after its session was dropped")
+	}
+	if aliveModel.Value() == nil {
+		t.Fatal("the model of a live session was freed")
+	}
+	runtime.KeepAlive(alive)
 }

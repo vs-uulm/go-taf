@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"strconv"
-	"sync"
 
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
@@ -23,34 +22,36 @@ import (
 // trustDeciderFunc is the signature used by TrustModelInstance.trustDecision.
 type trustDeciderFunc = func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision
 
-// Random Forest models, keyed by the content of TRUST_DECISION_RF_MODEL_PARAM: each model is parsed once (result or
-// error) for all TMIs, not once per vehicle. The TMIs share the parameter string, so a lookup does not copy it.
-var rfModels = struct {
-	sync.Mutex
-	models map[string]*rtl.Model
-	errs   map[string]error
-}{models: map[string]*rtl.Model{}, errs: map[string]error{}}
+// rfModel is a parsed Random Forest model and the content of TRUST_DECISION_RF_MODEL_PARAM it was parsed from.
+type rfModel struct {
+	content string
+	model   *rtl.Model
+}
 
-// rfModel returns the parsed Random Forest model of the given content.
-func rfModel(content string) (*rtl.Model, error) {
-	rfModels.Lock()
-	defer rfModels.Unlock()
-	if m, ok := rfModels.models[content]; ok {
-		return m, nil
-	}
-	if err, ok := rfModels.errs[content]; ok {
-		return nil, err
-	}
+// parseRFModel parses the content of TRUST_DECISION_RF_MODEL_PARAM; it panics if it is not a valid model.
+func parseRFModel(content string) *rfModel {
 	m, err := rtl.ParseModel([]byte(content))
 	if err != nil {
-		rfModels.errs[content] = err
-		return nil, err
+		panic("Could not parse TRUST_DECISION_RF_MODEL_PARAM: " + err.Error())
 	}
-	rfModels.models[content] = m
 	sum := sha256.Sum256([]byte(content))
 	slog.Default().Info("RTL model loaded", "TRUST_DECISION", "RTL_RandomForest", "bytes", len(content),
 		"sha256", hex.EncodeToString(sum[:]))
-	return m, nil
+	return &rfModel{content: content, model: m}
+}
+
+// sessionRFModel parses the Random Forest model of a session's parameters once, when the session is created (Spawn),
+// so that all TMIs of the session share it and it is freed with the session at TAS_TEARDOWN. It returns nil if the
+// session does not use RTL_RandomForest or does not pass the model (then it has to come with the vehicle's parameters).
+func sessionRFModel(params map[string]string) *rfModel {
+	if params["TRUST_DECISION"] != "RTL_RandomForest" {
+		return nil
+	}
+	content, exists := params["TRUST_DECISION_RF_MODEL_PARAM"]
+	if !exists {
+		return nil
+	}
+	return parseRFModel(content)
 }
 
 // thresholdParam reads a mandatory threshold in [0,1]; it panics if the parameter is missing or invalid.
@@ -73,8 +74,9 @@ func thresholdParam(params map[string]string, key string) float64 {
 //	RTL_Optuna       -> TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (all three, found by Optuna)
 //	RTL_RandomForest -> TRUST_DECISION_RF_MODEL_PARAM (content of the trained model, rf_model.json)
 //
-// It panics if a mandatory parameter is missing or invalid.
-func newRTLTrustDecider(kind string, params map[string]string) trustDeciderFunc {
+// session is the session's Random Forest model (sessionRFModel), used as long as the vehicle's parameters pass the same
+// content. It panics if a mandatory parameter is missing or invalid.
+func newRTLTrustDecider(kind string, params map[string]string, session *rfModel) trustDeciderFunc {
 	// Decision logic.
 	usePP := false
 	if logic, exists := params["TRUST_DECISION_LOGIC"]; exists {
@@ -102,11 +104,12 @@ func newRTLTrustDecider(kind string, params map[string]string) trustDeciderFunc 
 		if !exists {
 			panic("Missing value: TRUST_DECISION_RF_MODEL_PARAM")
 		}
-		model, err := rfModel(content)
-		if err != nil {
-			panic("Could not parse TRUST_DECISION_RF_MODEL_PARAM: " + err.Error())
+		// The TMIs get the session's parameter string, so this comparison does not compare the content byte by byte.
+		model := session
+		if model == nil || model.content != content {
+			model = parseRFModel(content)
 		}
-		rtlFor = model.PredictRTL
+		rtlFor = model.model.PredictRTL
 	default:
 		panic("Unknown RTL trust decision: " + kind)
 	}

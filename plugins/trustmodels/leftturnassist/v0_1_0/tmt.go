@@ -84,12 +84,15 @@ type DynamicTrustModelTemplateSpawner struct {
 	template      TrustModelTemplate
 	params        map[string]string
 	camQuantifier core.TrustSourceQuantifier
+	// the session's RTL Random Forest model, shared by all its TMIs and freed with the session (nil without one)
+	rfModel *rfModel
 }
 
 func NewDynamicTrustModelTemplateSpawner(template TrustModelTemplate, params map[string]string) DynamicTrustModelTemplateSpawner {
 	return DynamicTrustModelTemplateSpawner{
 		template: template,
 		params:   params,
+		rfModel:  sessionRFModel(params),
 	}
 }
 
@@ -290,7 +293,7 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 			}
 		// RTL thresholds (bt, dt, ut): manual, Random Forest or Optuna. See rtl_decision.go.
 		case "RTL_RiskBased", "RTL_RandomForest", "RTL_Optuna":
-			trustDecider = newRTLTrustDecider(paramTrustDecider, params)
+			trustDecider = newRTLTrustDecider(paramTrustDecider, params, t.rfModel)
 		}
 	}
 
