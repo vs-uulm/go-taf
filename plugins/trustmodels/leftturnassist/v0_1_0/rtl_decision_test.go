@@ -1,7 +1,7 @@
 package leftturnassist_v0_1_0
 
-// Tests the handling of RTL configuration problems: a trained model that cannot be read panics; a missing or invalid
-// parameter keeps the default decider and logs one warning. Runs through OnNewVehicle, the same path the TAF uses.
+// Tests the RTL trust deciders through OnNewVehicle, the same path the TAF uses: decisions, model selection, and
+// panics on a missing or invalid parameter or a trained model that cannot be read.
 
 import (
 	"bytes"
@@ -45,22 +45,47 @@ func captureLog(t *testing.T) *bytes.Buffer {
 // probe: P = 0.70 -> default (P > 0.5) accepts; RTL (0.8, 0.225, 0.4) rejects.
 var probe = op(0.45, 0.05, 0.5)
 
-func TestFallbackToDefault(t *testing.T) {
-	cases := map[string]map[string]string{
-		"risk missing DT/UT": {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8"},
-		"risk out of range":  {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "1.4"},
-		"risk not a number":  {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "x", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "0.4"},
-		"bad logic":          {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "0.4", "TRUST_DECISION_LOGIC": "foo"},
-	}
-	for name, p := range cases {
-		t.Run(name, func(t *testing.T) {
-			buf := captureLog(t)
-			if got := decide(t, p, probe); got != core.TRUSTWORTHY {
-				t.Fatalf("want default decision TRUSTWORTHY, got %v", got)
+// panicMessage spawns a TMI with params and returns its panic message, or "" if it does not panic.
+func panicMessage(t *testing.T, params map[string]string) (msg string) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			msg = fmt.Sprint(r)
+		}
+	}()
+	decide(t, params, probe)
+	return ""
+}
+
+func TestInvalidParamPanics(t *testing.T) {
+	risk := func(bt, dt, ut string) map[string]string {
+		p := map[string]string{"TRUST_DECISION": "RTL_RiskBased"}
+		for key, value := range map[string]string{"TRUST_DECISION_BT": bt, "TRUST_DECISION_DT": dt, "TRUST_DECISION_UT": ut} {
+			if value != "" {
+				p[key] = value
 			}
-			decide(t, p, probe) // second vehicle: no second warning
-			if n := strings.Count(buf.String(), "RTL trust decision unavailable"); n != 1 {
-				t.Fatalf("want 1 warning, got %d: %s", n, buf.String())
+		}
+		return p
+	}
+	badLogic := risk("0.8", "0.2", "0.4")
+	badLogic["TRUST_DECISION_LOGIC"] = "foo"
+	cases := map[string]struct {
+		params map[string]string
+		want   string
+	}{
+		"risk missing DT/UT":  {risk("0.8", "", ""), "Missing value: TRUST_DECISION_DT"},
+		"risk missing UT":     {risk("0.8", "0.2", ""), "Missing value: TRUST_DECISION_UT"},
+		"risk above range":    {risk("0.8", "0.2", "1.4"), "Could not parse TRUST_DECISION_UT"},
+		"risk below range":    {risk("-0.1", "0.2", "0.4"), "Could not parse TRUST_DECISION_BT"},
+		"risk NaN":            {risk("0.8", "NaN", "0.4"), "Could not parse TRUST_DECISION_DT"},
+		"risk not a number":   {risk("x", "0.2", "0.4"), "Could not parse TRUST_DECISION_BT"},
+		"bad logic":           {badLogic, "Could not parse TRUST_DECISION_LOGIC"},
+		"bad logic before RF": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_LOGIC": "foo"}, "Could not parse TRUST_DECISION_LOGIC"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := panicMessage(t, c.params); got != c.want {
+				t.Fatalf("panic %q, want %q", got, c.want)
 			}
 		})
 	}
@@ -94,19 +119,10 @@ func TestUnreadableModelPanics(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			for vehicle := 1; vehicle <= 2; vehicle++ {
-				func() {
-					defer func() {
-						r := recover()
-						if r == nil {
-							t.Fatalf("vehicle %d: expected panic", vehicle)
-						}
-						msg := fmt.Sprint(r)
-						if !strings.HasPrefix(msg, "Could not read RTL model: ") || !strings.Contains(msg, c.reason) {
-							t.Fatalf("vehicle %d: panic %q does not mention %q", vehicle, msg, c.reason)
-						}
-					}()
-					decide(t, c.params, probe)
-				}()
+				msg := panicMessage(t, c.params)
+				if !strings.HasPrefix(msg, "Could not read RTL model: ") || !strings.Contains(msg, c.reason) {
+					t.Fatalf("vehicle %d: panic %q does not mention %q", vehicle, msg, c.reason)
+				}
 			}
 		})
 	}
@@ -189,7 +205,7 @@ func TestModelPerConfig(t *testing.T) {
 	if decide(t, uf, atl) != core.NOT_TRUSTWORTHY {
 		t.Error("explicit path should override the selection")
 	}
-	if !strings.Contains(buf.String(), "UF-WBF-mlp/rtl_optuna.json") || strings.Contains(buf.String(), "unavailable") {
+	if !strings.Contains(buf.String(), "UF-WBF-mlp/rtl_optuna.json") {
 		t.Error(buf.String())
 	}
 }

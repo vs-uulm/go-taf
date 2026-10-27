@@ -3,9 +3,8 @@ package leftturnassist_v0_1_0
 // RTL-based trust deciders: risk-based, Random Forest and Optuna.
 // Each one supports the component rule or the projected-probability rule (PUT/PTT).
 // Trained models are selected by the TAF configuration: <TRUST_DECISION_MODEL_DIR>/<TD>-<TF>-<TQM>[-<window>]/<file>.
-// A trained model that cannot be read (no model selectable, missing or corrupt file, invalid values) makes the TMI
-// panic. A missing or invalid parameter of the risk-based decider or TRUST_DECISION_LOGIC logs a warning once and
-// keeps the default decider.
+// A missing or invalid parameter and a trained model that cannot be read (no model selectable, missing or corrupt
+// file, invalid values) make the TMI panic, like the other parameters of the trust model.
 
 import (
 	"encoding/json"
@@ -101,48 +100,27 @@ type trustDeciderFunc = func(proposition string, atl subjectivelogic.QueryableOp
 // Model cache: each file is read once per path (result or error), not once per vehicle.
 var rtlCache = struct {
 	sync.Mutex
-	rf        map[string]*rtl.Model
-	optuna    map[string]rtl.RTL
-	errs      map[string]error
-	warnedFor map[string]bool // warnings logged once per configuration
-}{rf: map[string]*rtl.Model{}, optuna: map[string]rtl.RTL{}, errs: map[string]error{}, warnedFor: map[string]bool{}}
+	rf     map[string]*rtl.Model
+	optuna map[string]rtl.RTL
+	errs   map[string]error
+}{rf: map[string]*rtl.Model{}, optuna: map[string]rtl.RTL{}, errs: map[string]error{}}
 
 // logLoaded logs once which model file is used.
 func logLoaded(kind, path string) {
 	slog.Default().Info("RTL model loaded", "TRUST_DECISION", kind, "file", path)
 }
 
-// rtlTrustDeciderOrDefault returns the RTL decider for TRUST_DECISION = kind.
-// If it cannot be built, it logs a warning (once per configuration) and returns fallback. A trained model that
-// cannot be read panics in newRTLTrustDecider instead.
-func rtlTrustDeciderOrDefault(kind string, params map[string]string, fallback trustDeciderFunc) trustDeciderFunc {
-	decider, err := newRTLTrustDecider(kind, params)
-	if err == nil {
-		return decider
-	}
-	key := fmt.Sprint(kind, params)
-	rtlCache.Lock()
-	first := !rtlCache.warnedFor[key]
-	rtlCache.warnedFor[key] = true
-	rtlCache.Unlock()
-	if first {
-		slog.Default().Warn("RTL trust decision unavailable, using the default trust decision (ProjectedProbability > 0.5)",
-			"TRUST_DECISION", kind, "reason", err.Error())
-	}
-	return fallback
-}
-
-// floatParam reads a mandatory float parameter.
-func floatParam(params map[string]string, key string) (float64, error) {
+// thresholdParam reads a mandatory threshold in [0,1]; it panics if the parameter is missing or invalid.
+func thresholdParam(params map[string]string, key string) float64 {
 	raw, exists := params[key]
 	if !exists {
-		return 0, fmt.Errorf("missing value: %s", key)
+		panic("Missing value: " + key)
 	}
 	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return 0, fmt.Errorf("could not parse %s=%q", key, raw)
+	if err != nil || !(value >= 0 && value <= 1) {
+		panic("Could not parse " + key)
 	}
-	return value, nil
+	return value
 }
 
 // checkFile fails if the trained model file does not exist.
@@ -237,7 +215,9 @@ func loadOptunaRTL(path string) (rtl.RTL, error) {
 //	RTL_RandomForest -> <TRUST_DECISION_MODEL_DIR>/<config>/rf_model.json, or TRUST_DECISION_RF_MODEL (explicit path)
 //	RTL_Optuna       -> <TRUST_DECISION_MODEL_DIR>/<config>/rtl_optuna.json, or TRUST_DECISION_OPTUNA_MODEL (explicit path)
 //	TRUST_DECISION_MODEL_DIR defaults to /opt/rtl-models; <config> = <TD>-<TF>-<TQM>[-<window>] of this TAF (rtlConfigName).
-func newRTLTrustDecider(kind string, params map[string]string) (trustDeciderFunc, error) {
+//
+// It panics if a mandatory parameter is missing or invalid, or if the trained model cannot be read.
+func newRTLTrustDecider(kind string, params map[string]string) trustDeciderFunc {
 	// Decision logic.
 	usePP := false
 	if logic, exists := params["TRUST_DECISION_LOGIC"]; exists {
@@ -246,7 +226,7 @@ func newRTLTrustDecider(kind string, params map[string]string) (trustDeciderFunc
 		case "ProjectedProbability":
 			usePP = true
 		default:
-			return nil, fmt.Errorf("could not parse TRUST_DECISION_LOGIC=%q (use Components | ProjectedProbability)", logic)
+			panic("Could not parse TRUST_DECISION_LOGIC")
 		}
 	}
 
@@ -254,21 +234,10 @@ func newRTLTrustDecider(kind string, params map[string]string) (trustDeciderFunc
 	var rtlFor func(rtl.ATL) rtl.RTL
 	switch kind {
 	case "RTL_RiskBased":
-		var fixed rtl.RTL
-		var errs []error
-		for _, p := range []struct {
-			key string
-			dst *float64
-		}{{"TRUST_DECISION_BT", &fixed.Bt}, {"TRUST_DECISION_DT", &fixed.Dt}, {"TRUST_DECISION_UT", &fixed.Ut}} {
-			v, err := floatParam(params, p.key)
-			errs = append(errs, err)
-			*p.dst = v
-		}
-		if err := errors.Join(errs...); err != nil {
-			return nil, err
-		}
-		if err := fixed.Validate(); err != nil {
-			return nil, err
+		fixed := rtl.RTL{
+			Bt: thresholdParam(params, "TRUST_DECISION_BT"),
+			Dt: thresholdParam(params, "TRUST_DECISION_DT"),
+			Ut: thresholdParam(params, "TRUST_DECISION_UT"),
 		}
 		rtlFor = func(rtl.ATL) rtl.RTL { return fixed }
 	case "RTL_RandomForest":
@@ -292,7 +261,7 @@ func newRTLTrustDecider(kind string, params map[string]string) (trustDeciderFunc
 		}
 		rtlFor = func(rtl.ATL) rtl.RTL { return fixed }
 	default:
-		return nil, fmt.Errorf("unknown RTL trust decision %q", kind)
+		panic("Unknown RTL trust decision: " + kind)
 	}
 
 	return func(proposition string, atlOpinion subjectivelogic.QueryableOpinion, _ subjectivelogic.QueryableOpinion) core.TrustDecision {
@@ -313,5 +282,5 @@ func newRTLTrustDecider(kind string, params map[string]string) (trustDeciderFunc
 			return core.TRUSTWORTHY
 		}
 		return core.NOT_TRUSTWORTHY
-	}, nil
+	}
 }
