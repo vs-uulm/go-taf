@@ -123,8 +123,9 @@ OnNewVehicle spawns a new TMI upon an arriving vehicle. It has the following opt
 								Belief
 									Mandatory Params:
 												- TRUST_DECISION_K (b >= k)
-								RTL_RiskBased, RTL_RandomForest, RTL_Optuna: if a mandatory param or the model file is missing or
-								invalid, a warning is logged and the default (ProjectedProbability > 0.5) is used.
+								RTL_RiskBased: if a mandatory param is missing or invalid, a warning is logged and the default
+								(ProjectedProbability > 0.5) is used.
+								RTL_RandomForest, RTL_Optuna: if the model file cannot be read, the TMI panics.
 								RTL_RiskBased
 									Mandatory Params:
 												- TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (manual RTL)
@@ -293,7 +294,8 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 				}
 			}
 		// RTL thresholds (bt, dt, ut): manual, Random Forest or Optuna. See rtl_decision.go.
-		// On a missing/invalid parameter or model file, a warning is logged and the default decider above is kept.
+		// On a missing/invalid parameter, a warning is logged and the default decider above is kept; a model file that
+		// cannot be read panics.
 		case "RTL_RiskBased", "RTL_RandomForest", "RTL_Optuna":
 			trustDecider = rtlTrustDeciderOrDefault(paramTrustDecider, params, trustDecider)
 		}

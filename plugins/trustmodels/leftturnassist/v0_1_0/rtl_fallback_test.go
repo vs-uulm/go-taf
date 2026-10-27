@@ -1,7 +1,7 @@
 package leftturnassist_v0_1_0
 
-// Tests that RTL trust decisions never stop the TAF: on any configuration problem the default decider is kept
-// and one warning is logged. Runs through OnNewVehicle, the same path the TAF uses.
+// Tests the handling of RTL configuration problems: a trained model that cannot be read panics; a missing or invalid
+// parameter keeps the default decider and logs one warning. Runs through OnNewVehicle, the same path the TAF uses.
 
 import (
 	"bytes"
@@ -47,15 +47,10 @@ var probe = op(0.45, 0.05, 0.5)
 
 func TestFallbackToDefault(t *testing.T) {
 	cases := map[string]map[string]string{
-		"missing RF file":     {"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": "/nope/rf_model.json"},
-		"no model for config": {"TRUST_DECISION": "RTL_RandomForest", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "TRUST_DECISION_MODEL_DIR": "/nope"},
-		"TQM not set":         {"TRUST_DECISION": "RTL_Optuna"},
-		"no model for new op": {"TRUST_DECISION": "RTL_Optuna", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "FUSION_OPERATOR": "New_Fusion", "TRUST_DECISION_MODEL_DIR": "/nope"},
-		"missing Optuna file": {"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": "/nope/rtl_optuna.json"},
-		"risk missing DT/UT":  {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8"},
-		"risk out of range":   {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "1.4"},
-		"risk not a number":   {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "x", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "0.4"},
-		"bad logic":           {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "0.4", "TRUST_DECISION_LOGIC": "foo"},
+		"risk missing DT/UT": {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8"},
+		"risk out of range":  {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "1.4"},
+		"risk not a number":  {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "x", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "0.4"},
+		"bad logic":          {"TRUST_DECISION": "RTL_RiskBased", "TRUST_DECISION_BT": "0.8", "TRUST_DECISION_DT": "0.2", "TRUST_DECISION_UT": "0.4", "TRUST_DECISION_LOGIC": "foo"},
 	}
 	for name, p := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -71,17 +66,49 @@ func TestFallbackToDefault(t *testing.T) {
 	}
 }
 
-func TestCorruptModelFallback(t *testing.T) {
-	f := t.TempDir() + "/bad.json"
-	if err := os.WriteFile(f, []byte("{bad"), 0o644); err != nil {
-		t.Fatal(err)
+// TestUnreadableModelPanics: a trained model that cannot be read makes the TMI panic, also for a second vehicle
+// (the error is cached per path).
+func TestUnreadableModelPanics(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, data string) string {
+		if err := os.WriteFile(dir+"/"+name, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir + "/" + name
 	}
-	buf := captureLog(t)
-	if decide(t, map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": f}, probe) != core.TRUSTWORTHY {
-		t.Fatal("corrupt model should fall back to default")
+	cases := map[string]struct {
+		params map[string]string
+		reason string
+	}{
+		"missing RF file":     {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": "/nope/rf_model.json"}, "not found"},
+		"no model for config": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "TRUST_DECISION_MODEL_DIR": "/nope"}, "/nope/BR-ACF-bspline/rf_model.json"},
+		"TQM not set":         {map[string]string{"TRUST_DECISION": "RTL_Optuna"}, "TRUST_QUANTIFICATION_MECHANISM_MBD is not set"},
+		"no model for new op": {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "FUSION_OPERATOR": "New_Fusion", "TRUST_DECISION_MODEL_DIR": "/nope"}, "BR-New_Fusion-bspline"},
+		"missing Optuna file": {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": "/nope/rtl_optuna.json"}, "not found"},
+		"model is a dir":      {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": dir}, "is a directory"},
+		"corrupt RF model":    {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": write("bad_rf.json", "{bad")}, "corrupt RF model"},
+		"corrupt Optuna":      {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": write("bad_optuna.json", "{bad")}, "corrupt Optuna model"},
+		"Optuna without rtl":  {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": write("no_rtl.json", `{}`)}, `no "rtl" field`},
+		"Optuna out of range": {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_OPTUNA_MODEL": write("range.json", `{"rtl": {"Bt": 1.5, "Dt": 1, "Ut": 1}}`)}, "outside [0,1]"},
 	}
-	if !strings.Contains(buf.String(), "corrupt RF model") {
-		t.Fatal(buf.String())
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			for vehicle := 1; vehicle <= 2; vehicle++ {
+				func() {
+					defer func() {
+						r := recover()
+						if r == nil {
+							t.Fatalf("vehicle %d: expected panic", vehicle)
+						}
+						msg := fmt.Sprint(r)
+						if !strings.HasPrefix(msg, "Could not read RTL model: ") || !strings.Contains(msg, c.reason) {
+							t.Fatalf("vehicle %d: panic %q does not mention %q", vehicle, msg, c.reason)
+						}
+					}()
+					decide(t, c.params, probe)
+				}()
+			}
+		})
 	}
 }
 

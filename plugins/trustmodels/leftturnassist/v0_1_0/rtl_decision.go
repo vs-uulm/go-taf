@@ -3,8 +3,9 @@ package leftturnassist_v0_1_0
 // RTL-based trust deciders: risk-based, Random Forest and Optuna.
 // Each one supports the component rule or the projected-probability rule (PUT/PTT).
 // Trained models are selected by the TAF configuration: <TRUST_DECISION_MODEL_DIR>/<TD>-<TF>-<TQM>[-<window>]/<file>.
-// Any configuration problem (missing parameter or model file, invalid value, corrupt file) never stops the TAF:
-// a warning is logged once and the default decider is kept.
+// A trained model that cannot be read (no model selectable, missing or corrupt file, invalid values) makes the TMI
+// panic. A missing or invalid parameter of the risk-based decider or TRUST_DECISION_LOGIC logs a warning once and
+// keeps the default decider.
 
 import (
 	"encoding/json"
@@ -112,7 +113,8 @@ func logLoaded(kind, path string) {
 }
 
 // rtlTrustDeciderOrDefault returns the RTL decider for TRUST_DECISION = kind.
-// If it cannot be built, it logs a warning (once per configuration) and returns fallback.
+// If it cannot be built, it logs a warning (once per configuration) and returns fallback. A trained model that
+// cannot be read panics in newRTLTrustDecider instead.
 func rtlTrustDeciderOrDefault(kind string, params map[string]string, fallback trustDeciderFunc) trustDeciderFunc {
 	decider, err := newRTLTrustDecider(kind, params)
 	if err == nil {
@@ -272,21 +274,21 @@ func newRTLTrustDecider(kind string, params map[string]string) (trustDeciderFunc
 	case "RTL_RandomForest":
 		path, err := modelPath(params, "TRUST_DECISION_RF_MODEL", rfModelFile)
 		if err != nil {
-			return nil, err
+			panic("Could not read RTL model: " + err.Error())
 		}
 		model, err := loadRFModel(path)
 		if err != nil {
-			return nil, err
+			panic("Could not read RTL model: " + err.Error())
 		}
 		rtlFor = model.PredictRTL
 	case "RTL_Optuna":
 		path, err := modelPath(params, "TRUST_DECISION_OPTUNA_MODEL", optunaModelFile)
 		if err != nil {
-			return nil, err
+			panic("Could not read RTL model: " + err.Error())
 		}
 		fixed, err := loadOptunaRTL(path)
 		if err != nil {
-			return nil, err
+			panic("Could not read RTL model: " + err.Error())
 		}
 		rtlFor = func(rtl.ATL) rtl.RTL { return fixed }
 	default:
