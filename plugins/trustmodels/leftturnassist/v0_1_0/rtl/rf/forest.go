@@ -4,6 +4,8 @@ package rf
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math/rand"
 	"os"
 	"sort"
@@ -88,17 +90,54 @@ func (f *Forest) Save(path string) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-// Load reads a forest from JSON.
+// Load reads a forest from a JSON file.
 func Load(path string) (*Forest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	return Parse(data)
+}
+
+// Parse reads a forest from JSON and checks its structure, so that Predict cannot fail on it.
+func Parse(data []byte) (*Forest, error) {
 	var f Forest
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, err
 	}
+	if err := f.validate(); err != nil {
+		return nil, err
+	}
 	return &f, nil
+}
+
+// validate checks the dimensions and that every tree is a valid pre-order tree: children follow their parent (as
+// Train writes them), so Predict always reaches a leaf.
+func (f *Forest) validate() error {
+	if f.NFeatures < 1 || f.NOutputs < 1 {
+		return fmt.Errorf("invalid dimensions: n_features = %d, n_outputs = %d", f.NFeatures, f.NOutputs)
+	}
+	if len(f.Trees) == 0 {
+		return errors.New("no trees")
+	}
+	for t, tree := range f.Trees {
+		if len(tree.Nodes) == 0 {
+			return fmt.Errorf("tree %d has no nodes", t)
+		}
+		for i, n := range tree.Nodes {
+			switch {
+			case n.Feature == -1:
+				if len(n.Value) != f.NOutputs {
+					return fmt.Errorf("tree %d, node %d: leaf has %d values, want %d", t, i, len(n.Value), f.NOutputs)
+				}
+			case n.Feature < 0 || n.Feature >= f.NFeatures:
+				return fmt.Errorf("tree %d, node %d: invalid feature %d", t, i, n.Feature)
+			case n.Left <= i || n.Right <= i || n.Left >= len(tree.Nodes) || n.Right >= len(tree.Nodes):
+				return fmt.Errorf("tree %d, node %d: invalid children %d, %d", t, i, n.Left, n.Right)
+			}
+		}
+	}
+	return nil
 }
 
 // builder grows one tree.

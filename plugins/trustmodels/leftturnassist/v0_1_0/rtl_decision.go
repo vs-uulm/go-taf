@@ -3,17 +3,14 @@ package leftturnassist_v0_1_0
 // RTL-based trust deciders: risk-based, Random Forest and Optuna.
 // Each one supports the component rule or the projected-probability rule (PUT/PTT).
 // Risk-based and Optuna take the RTL as parameters; the Optuna RTL is trained outside the TAF.
-// Random Forest models are selected by the TAF configuration: <TRUST_DECISION_MODEL_DIR>/<TD>-<TF>-<TQM>[-<window>]/<file>.
-// A missing or invalid parameter and a trained model that cannot be read (no model selectable, missing or corrupt
-// file, invalid values) make the TMI panic, like the other parameters of the trust model.
+// The Random Forest takes the trained model as parameter content (TRUST_DECISION_RF_MODEL_PARAM), like the MBD
+// quantification models; the TAF reads no files.
+// A missing or invalid parameter makes the TMI panic, like the other parameters of the trust model.
 
 import (
-	"errors"
-	"fmt"
-	"io/fs"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -23,89 +20,37 @@ import (
 	"github.com/vs-uulm/go-taf/plugins/trustmodels/leftturnassist/v0_1_0/rtl"
 )
 
-// Trained models: one folder per TAF configuration, named as in eval/results-matrix.sh (e.g. BR-ACF-bspline).
-const (
-	defaultRTLModelDir = "/opt/rtl-models" // rtl-models/ of the evaluation repo, mounted by run-simulation.sh
-	rfModelFile        = "rf_model.json"
-)
-
-// Short names of the operators, as in eval/results-matrix.sh. A name not in these maps is used as is, as in the
-// results matrix.
-var (
-	tdShortNames  = map[string]string{"Base_Rate_Sensitive": "BR", "Uncertainty_Favouring": "UF", "Disbelief_Favouring": "DF"}
-	tfShortNames  = map[string]string{"Aleatory_Cumulative": "ACF", "Epistemic_Cumulative": "ECF", "Weighted": "WBF", "Consensus_Compromise": "CCF", "Proportional": "PF"}
-	tqmShortNames = map[string]string{"f1-optimized": "analytic_f1", "analytic": "analytic", "b-spline": "bspline", "mlp": "mlp"}
-)
-
-// shortName maps a parameter value to its short name; unset uses unset, unknown names stay as they are.
-func shortName(names map[string]string, value, unset string) string {
-	if value == "" {
-		return unset
-	}
-	if short, ok := names[value]; ok {
-		return short
-	}
-	return value
-}
-
-// rtlConfigName returns the TAF configuration <TD>-<TF>-<TQM>[-<window>], e.g. BR-ACF-bspline or
-// BR-ACF-bspline-temporal-g0.2-t0.5. Unset operators use the TAF defaults (BR, ACF), as in OnNewVehicle.
-func rtlConfigName(params map[string]string) (string, error) {
-	tqm := params["TRUST_QUANTIFICATION_MECHANISM_MBD"]
-	if tqm == "" {
-		return "", errors.New("cannot select the model: TRUST_QUANTIFICATION_MECHANISM_MBD is not set")
-	}
-	name := shortName(tdShortNames, params["DISCOUNTING_OPERATOR"], "BR") + "-" +
-		shortName(tfShortNames, params["FUSION_OPERATOR"], "ACF") + "-" +
-		shortName(tqmShortNames, tqm, "")
-	if window := rtlWindowName(newMbdWindowing(params)); window != "off" {
-		name += "-" + window
-	}
-	return name, nil
-}
-
-// rtlWindowName names the MBD windowing as the window column of eval/results-matrix.sh:
-// off, <equal|linear>-n<size> or temporal-g<gamma>-t<tau>.
-func rtlWindowName(w mbdWindowing) string {
-	number := func(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
-	switch {
-	case w.weighting == mbdWindowTemporal:
-		return "temporal-g" + number(w.gamma) + "-t" + number(w.tau)
-	case w.size > 1:
-		return string(w.weighting) + "-n" + strconv.Itoa(w.size)
-	}
-	return "off"
-}
-
-// modelPath returns the explicit path (pathKey) if set, else the model of the current configuration.
-func modelPath(params map[string]string, pathKey, file string) (string, error) {
-	if path := params[pathKey]; path != "" {
-		return path, nil
-	}
-	config, err := rtlConfigName(params)
-	if err != nil {
-		return "", err
-	}
-	dir := params["TRUST_DECISION_MODEL_DIR"]
-	if dir == "" {
-		dir = defaultRTLModelDir
-	}
-	return filepath.Join(dir, config, file), nil
-}
-
 // trustDeciderFunc is the signature used by TrustModelInstance.trustDecision.
 type trustDeciderFunc = func(proposition string, atl subjectivelogic.QueryableOpinion, rtl subjectivelogic.QueryableOpinion) core.TrustDecision
 
-// Model cache: each file is read once per path (result or error), not once per vehicle.
-var rtlCache = struct {
+// Random Forest models, keyed by the content of TRUST_DECISION_RF_MODEL_PARAM: each model is parsed once (result or
+// error) for all TMIs, not once per vehicle. The TMIs share the parameter string, so a lookup does not copy it.
+var rfModels = struct {
 	sync.Mutex
-	rf   map[string]*rtl.Model
-	errs map[string]error
-}{rf: map[string]*rtl.Model{}, errs: map[string]error{}}
+	models map[string]*rtl.Model
+	errs   map[string]error
+}{models: map[string]*rtl.Model{}, errs: map[string]error{}}
 
-// logLoaded logs once which model file is used.
-func logLoaded(kind, path string) {
-	slog.Default().Info("RTL model loaded", "TRUST_DECISION", kind, "file", path)
+// rfModel returns the parsed Random Forest model of the given content.
+func rfModel(content string) (*rtl.Model, error) {
+	rfModels.Lock()
+	defer rfModels.Unlock()
+	if m, ok := rfModels.models[content]; ok {
+		return m, nil
+	}
+	if err, ok := rfModels.errs[content]; ok {
+		return nil, err
+	}
+	m, err := rtl.ParseModel([]byte(content))
+	if err != nil {
+		rfModels.errs[content] = err
+		return nil, err
+	}
+	rfModels.models[content] = m
+	sum := sha256.Sum256([]byte(content))
+	slog.Default().Info("RTL model loaded", "TRUST_DECISION", "RTL_RandomForest", "bytes", len(content),
+		"sha256", hex.EncodeToString(sum[:]))
+	return m, nil
 }
 
 // thresholdParam reads a mandatory threshold in [0,1]; it panics if the parameter is missing or invalid.
@@ -121,59 +66,14 @@ func thresholdParam(params map[string]string, key string) float64 {
 	return value
 }
 
-// checkFile fails if the trained model file does not exist.
-func checkFile(path, key, trainCmd string) error {
-	info, err := os.Stat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%s file '%s' not found (train first: %s)", key, path, trainCmd)
-	}
-	if err != nil {
-		return fmt.Errorf("could not access %s file '%s': %w", key, path, err)
-	}
-	if info.IsDir() {
-		return fmt.Errorf("%s '%s' is a directory", key, path)
-	}
-	return nil
-}
-
-// loadRFModel loads (once) the Random Forest model.
-func loadRFModel(path string) (*rtl.Model, error) {
-	rtlCache.Lock()
-	defer rtlCache.Unlock()
-	if m, ok := rtlCache.rf[path]; ok {
-		return m, nil
-	}
-	if err, ok := rtlCache.errs["rf:"+path]; ok {
-		return nil, err
-	}
-	m, err := func() (*rtl.Model, error) {
-		if err := checkFile(path, "RF model", "eval/train-rtl.sh --method rf"); err != nil {
-			return nil, err
-		}
-		m, err := rtl.LoadModel(path)
-		if err != nil {
-			return nil, fmt.Errorf("corrupt RF model '%s': %w", path, err)
-		}
-		return m, nil
-	}()
-	if err != nil {
-		rtlCache.errs["rf:"+path] = err
-		return nil, err
-	}
-	rtlCache.rf[path] = m
-	logLoaded("RTL_RandomForest", path)
-	return m, nil
-}
-
 // newRTLTrustDecider builds the decider for TRUST_DECISION = RTL_RiskBased | RTL_RandomForest | RTL_Optuna.
 //
 //	TRUST_DECISION_LOGIC: Components (default) | ProjectedProbability
 //	RTL_RiskBased    -> TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (all three, set manually)
 //	RTL_Optuna       -> TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (all three, found by Optuna)
-//	RTL_RandomForest -> <TRUST_DECISION_MODEL_DIR>/<config>/rf_model.json, or TRUST_DECISION_RF_MODEL (explicit path)
-//	TRUST_DECISION_MODEL_DIR defaults to /opt/rtl-models; <config> = <TD>-<TF>-<TQM>[-<window>] of this TAF (rtlConfigName).
+//	RTL_RandomForest -> TRUST_DECISION_RF_MODEL_PARAM (content of the trained model, rf_model.json)
 //
-// It panics if a mandatory parameter is missing or invalid, or if the trained model cannot be read.
+// It panics if a mandatory parameter is missing or invalid.
 func newRTLTrustDecider(kind string, params map[string]string) trustDeciderFunc {
 	// Decision logic.
 	usePP := false
@@ -198,13 +98,13 @@ func newRTLTrustDecider(kind string, params map[string]string) trustDeciderFunc 
 		}
 		rtlFor = func(rtl.ATL) rtl.RTL { return fixed }
 	case "RTL_RandomForest":
-		path, err := modelPath(params, "TRUST_DECISION_RF_MODEL", rfModelFile)
-		if err != nil {
-			panic("Could not read RTL model: " + err.Error())
+		content, exists := params["TRUST_DECISION_RF_MODEL_PARAM"]
+		if !exists {
+			panic("Missing value: TRUST_DECISION_RF_MODEL_PARAM")
 		}
-		model, err := loadRFModel(path)
+		model, err := rfModel(content)
 		if err != nil {
-			panic("Could not read RTL model: " + err.Error())
+			panic("Could not parse TRUST_DECISION_RF_MODEL_PARAM: " + err.Error())
 		}
 		rtlFor = model.PredictRTL
 	default:

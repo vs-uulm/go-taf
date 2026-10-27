@@ -1,13 +1,12 @@
 package leftturnassist_v0_1_0
 
-// Tests the RTL trust deciders through OnNewVehicle, the same path the TAF uses: decisions, model selection, and
-// panics on a missing or invalid parameter or a trained model that cannot be read.
+// Tests the RTL trust deciders through OnNewVehicle, the same path the TAF uses: decisions, the Random Forest model
+// passed as parameter content, and panics on a missing or invalid parameter.
 
 import (
 	"bytes"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 
@@ -57,6 +56,11 @@ func panicMessage(t *testing.T, params map[string]string) (msg string) {
 	return ""
 }
 
+// singleLeafForest is an RF model with one tree of one leaf, which predicts the RTL (bt, 1, 1) for every ATL.
+func singleLeafForest(bt float64) string {
+	return fmt.Sprintf(`{"n_features": 3, "n_outputs": 3, "trees": [{"nodes": [{"f": -1, "v": [%g, 1, 1]}]}]}`, bt)
+}
+
 func TestInvalidParamPanics(t *testing.T) {
 	risk := func(bt, dt, ut string) map[string]string {
 		p := map[string]string{"TRUST_DECISION": "RTL_RiskBased"}
@@ -83,6 +87,7 @@ func TestInvalidParamPanics(t *testing.T) {
 		"bad logic before RF": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_LOGIC": "foo"}, "Could not parse TRUST_DECISION_LOGIC"},
 		"Optuna without RTL":  {map[string]string{"TRUST_DECISION": "RTL_Optuna"}, "Missing value: TRUST_DECISION_BT"},
 		"Optuna above range":  {map[string]string{"TRUST_DECISION": "RTL_Optuna", "TRUST_DECISION_BT": "1.5", "TRUST_DECISION_DT": "1", "TRUST_DECISION_UT": "1"}, "Could not parse TRUST_DECISION_BT"},
+		"RF without model":    {map[string]string{"TRUST_DECISION": "RTL_RandomForest"}, "Missing value: TRUST_DECISION_RF_MODEL_PARAM"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -93,32 +98,33 @@ func TestInvalidParamPanics(t *testing.T) {
 	}
 }
 
-// TestUnreadableModelPanics: a trained model that cannot be read makes the TMI panic, also for a second vehicle
-// (the error is cached per path).
-func TestUnreadableModelPanics(t *testing.T) {
-	dir := t.TempDir()
-	write := func(name, data string) string {
-		if err := os.WriteFile(dir+"/"+name, []byte(data), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return dir + "/" + name
+// TestInvalidRFModelPanics: model content that is not a valid forest makes the TMI panic, also for a second vehicle
+// (the error is cached per content).
+func TestInvalidRFModelPanics(t *testing.T) {
+	tree := func(nodes string) string {
+		return `{"n_features": 3, "n_outputs": 3, "trees": [{"nodes": [` + nodes + `]}]}`
 	}
+	leaf := `{"f": -1, "v": [0.5, 0.5, 0.5]}`
 	cases := map[string]struct {
-		params map[string]string
-		reason string
+		content string
+		reason  string
 	}{
-		"missing RF file":     {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": "/nope/rf_model.json"}, "not found"},
-		"no model for config": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "TRUST_DECISION_MODEL_DIR": "/nope"}, "/nope/BR-ACF-bspline/rf_model.json"},
-		"TQM not set":         {map[string]string{"TRUST_DECISION": "RTL_RandomForest"}, "TRUST_QUANTIFICATION_MECHANISM_MBD is not set"},
-		"no model for new op": {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "FUSION_OPERATOR": "New_Fusion", "TRUST_DECISION_MODEL_DIR": "/nope"}, "BR-New_Fusion-bspline"},
-		"model is a dir":      {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": dir}, "is a directory"},
-		"corrupt RF model":    {map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL": write("bad_rf.json", "{bad")}, "corrupt RF model"},
+		"not JSON":           {"{bad", "invalid character"},
+		"empty object":       {"{}", "invalid dimensions"},
+		"wrong dimensions":   {`{"n_features": 2, "n_outputs": 3, "trees": [{"nodes": [{"f": -1, "v": [1, 1, 1]}]}]}`, "maps 2 features to 3 outputs"},
+		"no trees":           {`{"n_features": 3, "n_outputs": 3, "trees": []}`, "no trees"},
+		"empty tree":         {tree(""), "tree 0 has no nodes"},
+		"leaf values":        {tree(`{"f": -1, "v": [0.5]}`), "leaf has 1 values, want 3"},
+		"invalid feature":    {tree(`{"f": 3, "t": 0.5, "l": 1, "r": 2},` + leaf + `,` + leaf), "invalid feature 3"},
+		"child before node":  {tree(`{"f": 0, "t": 0.5, "l": 0, "r": 1},` + leaf), "invalid children 0, 1"},
+		"child out of range": {tree(`{"f": 0, "t": 0.5, "l": 1, "r": 2},` + leaf), "invalid children 1, 2"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
+			params := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": c.content}
 			for vehicle := 1; vehicle <= 2; vehicle++ {
-				msg := panicMessage(t, c.params)
-				if !strings.HasPrefix(msg, "Could not read RTL model: ") || !strings.Contains(msg, c.reason) {
+				msg := panicMessage(t, params)
+				if !strings.HasPrefix(msg, "Could not parse TRUST_DECISION_RF_MODEL_PARAM: ") || !strings.Contains(msg, c.reason) {
 					t.Fatalf("vehicle %d: panic %q does not mention %q", vehicle, msg, c.reason)
 				}
 			}
@@ -148,68 +154,29 @@ func TestFixedRTLDecides(t *testing.T) {
 	}
 }
 
-func TestConfigName(t *testing.T) {
-	cases := []struct {
-		params map[string]string
-		want   string
-	}{
-		{map[string]string{"TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline"}, "BR-ACF-bspline"}, // TAF defaults
-		{map[string]string{"DISCOUNTING_OPERATOR": "Uncertainty_Favouring", "FUSION_OPERATOR": "Proportional",
-			"TRUST_QUANTIFICATION_MECHANISM_MBD": "f1-optimized"}, "UF-PF-analytic_f1"},
-		{map[string]string{"DISCOUNTING_OPERATOR": "Disbelief_Favouring", "FUSION_OPERATOR": "Consensus_Compromise",
-			"TRUST_QUANTIFICATION_MECHANISM_MBD": "mlp"}, "DF-CCF-mlp"},
-		{map[string]string{"FUSION_OPERATOR": "New_Fusion", "TRUST_QUANTIFICATION_MECHANISM_MBD": "new-tqm"}, "BR-New_Fusion-new-tqm"}, // new names as is
-		// MBD windowing, as in the window column of eval/results-matrix.sh
-		{map[string]string{"TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline", "MBD_WINDOW_WEIGHTING": "temporal",
-			"MBD_TEMPORAL_GAMMA": "0.20", "MBD_TEMPORAL_TAU": "0.5"}, "BR-ACF-bspline-temporal-g0.2-t0.5"},
-		{map[string]string{"TRUST_QUANTIFICATION_MECHANISM_MBD": "mlp", "MBD_WINDOW_WEIGHTING": "linear", "MBD_WINDOW_SIZE": "3"}, "BR-ACF-mlp-linear-n3"},
-		{map[string]string{"TRUST_QUANTIFICATION_MECHANISM_MBD": "mlp", "MBD_WINDOW_WEIGHTING": "linear", "MBD_WINDOW_SIZE": "1"}, "BR-ACF-mlp"}, // size 1 = off
-	}
-	for _, c := range cases {
-		if got, err := rtlConfigName(c.params); err != nil || got != c.want {
-			t.Errorf("%v: got %q, %v; want %q", c.params, got, err, c.want)
-		}
-	}
-}
+// rfTestRuns makes the model content of each run of TestRFModelFromParam unique (the model cache is global).
+var rfTestRuns int
 
-// TestModelPerConfig: each configuration reads its own Random Forest model; an explicit path overrides the selection.
-func TestModelPerConfig(t *testing.T) {
-	dir := t.TempDir()
-	// write stores a forest with a single leaf, which predicts the RTL (bt, 1, 1) for every ATL.
-	write := func(config string, bt float64) {
-		os.MkdirAll(dir+"/"+config, 0o755)
-		data := fmt.Sprintf(`{"n_features": 3, "n_outputs": 3, "trees": [{"nodes": [{"f": -1, "v": [%g, 1, 1]}]}]}`, bt)
-		if err := os.WriteFile(dir+"/"+config+"/rf_model.json", []byte(data), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("BR-ACF-bspline", 0.9) // rejects b = 0.85
-	write("UF-WBF-mlp", 0.8)     // accepts b = 0.85
-	atl := op(0.85, 0.05, 0.1)
-	base := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_MODEL_DIR": dir}
-	with := func(extra map[string]string) map[string]string {
-		p := map[string]string{}
-		for k, v := range base {
-			p[k] = v
-		}
-		for k, v := range extra {
-			p[k] = v
-		}
-		return p
-	}
+// TestRFModelFromParam: the Random Forest decides with the model passed as content, and parses each model once.
+func TestRFModelFromParam(t *testing.T) {
 	buf := captureLog(t)
-	if decide(t, with(map[string]string{"TRUST_QUANTIFICATION_MECHANISM_MBD": "b-spline"}), atl) != core.NOT_TRUSTWORTHY {
-		t.Error("BR-ACF-bspline (bt 0.9) should reject")
+	rfTestRuns++
+	unique := strings.Repeat(" ", rfTestRuns) // whitespace after the JSON value: same model, new content
+	atl := op(0.85, 0.05, 0.1)
+	strict := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.9) + unique}
+	lenient := map[string]string{"TRUST_DECISION": "RTL_RandomForest", "TRUST_DECISION_RF_MODEL_PARAM": singleLeafForest(0.8) + unique}
+	for vehicle := 1; vehicle <= 3; vehicle++ {
+		if decide(t, strict, atl) != core.NOT_TRUSTWORTHY {
+			t.Error("bt 0.9 should reject b = 0.85")
+		}
+		if decide(t, lenient, atl) != core.TRUSTWORTHY {
+			t.Error("bt 0.8 should accept b = 0.85")
+		}
 	}
-	uf := with(map[string]string{"DISCOUNTING_OPERATOR": "Uncertainty_Favouring", "FUSION_OPERATOR": "Weighted", "TRUST_QUANTIFICATION_MECHANISM_MBD": "mlp"})
-	if decide(t, uf, atl) != core.TRUSTWORTHY {
-		t.Error("UF-WBF-mlp (bt 0.8) should accept")
+	if decide(t, strict, op(0, 0, 1)) != core.UNDECIDABLE {
+		t.Error("u = 1 should be undecidable")
 	}
-	uf["TRUST_DECISION_RF_MODEL"] = dir + "/BR-ACF-bspline/rf_model.json"
-	if decide(t, uf, atl) != core.NOT_TRUSTWORTHY {
-		t.Error("explicit path should override the selection")
-	}
-	if !strings.Contains(buf.String(), "UF-WBF-mlp/rf_model.json") {
-		t.Error(buf.String())
+	if n := strings.Count(buf.String(), "RTL model loaded"); n != 2 {
+		t.Errorf("want each of the 2 models parsed once, got %d loads: %s", n, buf.String())
 	}
 }

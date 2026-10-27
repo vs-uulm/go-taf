@@ -282,11 +282,28 @@ func (m *Model) Judge(a ATL) (bool, RTL, error) {
 // Save writes the model as JSON.
 func (m *Model) Save(path string) error { return m.forest.Save(path) }
 
-// LoadModel reads the RF model from JSON.
+// LoadModel reads the RF model from a JSON file.
 func LoadModel(path string) (*Model, error) {
 	f, err := rf.Load(path)
 	if err != nil {
 		return nil, err
+	}
+	return newModel(f)
+}
+
+// ParseModel reads the RF model from JSON.
+func ParseModel(data []byte) (*Model, error) {
+	f, err := rf.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return newModel(f)
+}
+
+// newModel checks that the forest maps an ATL (b, d, u) to an RTL (bt, dt, ut).
+func newModel(f *rf.Forest) (*Model, error) {
+	if f.NFeatures != 3 || f.NOutputs != 3 {
+		return nil, fmt.Errorf("RF model maps %d features to %d outputs, want 3 to 3", f.NFeatures, f.NOutputs)
 	}
 	return &Model{forest: f}, nil
 }
