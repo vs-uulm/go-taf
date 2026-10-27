@@ -20,7 +20,7 @@ import (
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
 
-	"github.com/vs-uulm/go-taf/pkg/rtl"
+	"github.com/vs-uulm/go-taf/plugins/trustmodels/leftturnassist/v0_1_0/rtl"
 )
 
 // Trained models: one folder per TAF configuration, named as in eval/results-matrix.sh (e.g. BR-ACF-bspline).

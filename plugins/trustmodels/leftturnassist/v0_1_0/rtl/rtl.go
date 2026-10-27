@@ -11,7 +11,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/vs-uulm/go-taf/pkg/rtl/rf"
+	"github.com/vs-uulm/go-taf/plugins/trustmodels/leftturnassist/v0_1_0/rtl/rf"
 )
 
 // ATL is the Actual Trustworthiness Level (binomial SL opinion).
