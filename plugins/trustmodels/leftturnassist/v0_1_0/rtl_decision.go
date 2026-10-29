@@ -1,7 +1,7 @@
 package leftturnassist_v0_1_0
 
 // RTL-based trust deciders: risk-based, Random Forest and Optuna.
-// Each one supports the component rule or the projected-probability rule (PUT/PTT).
+// Each one supports the component rule or the projected-probability rule (P > PTT, see rtl.PTT).
 // Risk-based and Optuna take the RTL as parameters; the Optuna RTL is trained outside the TAF.
 // The Random Forest takes the trained model as parameter content (TRUST_DECISION_RF_MODEL_PARAM), like the MBD
 // quantification models; the TAF reads no files.
@@ -15,6 +15,7 @@ import (
 
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
+	"github.com/vs-uulm/go-taf/pkg/trustdecision"
 
 	"github.com/vs-uulm/go-taf/plugins/trustmodels/leftturnassist/v0_1_0/rtl"
 )
@@ -123,8 +124,8 @@ func newRTLTrustDecider(kind string, params map[string]string, session *rfModel)
 
 		trusted := false
 		if usePP {
-			// Gray zone (PUT <= P <= PTT) is rejected.
-			trusted = rtl.DecidePP(atl, required, atlOpinion.BaseRate()).Trusted
+			// trusted only above PTT, also if the ATL meets the RTL with a lower P (fail-safe)
+			trusted = trustdecision.ProjectProbability(atlOpinion) > rtl.PTT(required, atlOpinion.BaseRate())
 		} else {
 			trusted = rtl.Decide(atl, required)
 		}

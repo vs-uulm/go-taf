@@ -154,7 +154,7 @@ func TestFixedRTLDecides(t *testing.T) {
 			}
 			p["TRUST_DECISION_LOGIC"] = "ProjectedProbability"
 			if decide(t, p, op(0.8, 0.1, 0.1)) != core.NOT_TRUSTWORTHY {
-				t.Error("gray zone (P = 0.85, PUT = 0.80, PTT = 0.90) should reject")
+				t.Error("(0.8, 0.1, 0.1) meets the RTL, but P = 0.85 is not above PTT = 0.90, so it should be rejected")
 			}
 			if decide(t, p, op(0, 0, 1)) != core.UNDECIDABLE {
 				t.Error("u = 1 should be undecidable")
