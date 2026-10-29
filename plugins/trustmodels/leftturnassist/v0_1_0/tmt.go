@@ -84,12 +84,15 @@ type DynamicTrustModelTemplateSpawner struct {
 	template      TrustModelTemplate
 	params        map[string]string
 	camQuantifier core.TrustSourceQuantifier
+	// the session's RTL Random Forest model, shared by all its TMIs and freed with the session (nil without one)
+	rfModel *rfModel
 }
 
 func NewDynamicTrustModelTemplateSpawner(template TrustModelTemplate, params map[string]string) DynamicTrustModelTemplateSpawner {
 	return DynamicTrustModelTemplateSpawner{
 		template: template,
 		params:   params,
+		rfModel:  sessionRFModel(params),
 	}
 }
 
@@ -123,19 +126,15 @@ OnNewVehicle spawns a new TMI upon an arriving vehicle. It has the following opt
 								Belief
 									Mandatory Params:
 												- TRUST_DECISION_K (b >= k)
-								RTL_RiskBased, RTL_RandomForest, RTL_Optuna: if a mandatory param or the model file is missing or
-								invalid, a warning is logged and the default (ProjectedProbability > 0.5) is used.
-								RTL_RiskBased
+								RTL_RiskBased, RTL_Optuna (same decision; the RTL is set manually or found by Optuna)
 									Mandatory Params:
-												- TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (manual RTL)
+												- TRUST_DECISION_BT, TRUST_DECISION_DT, TRUST_DECISION_UT (RTL, each in [0,1])
 									Optional Params:
 												- TRUST_DECISION_LOGIC (Components (default) | ProjectedProbability)
-								RTL_RandomForest, RTL_Optuna: the trained model of this TAF configuration is used,
-								<TRUST_DECISION_MODEL_DIR>/<TD>-<TF>-<TQM>[-<MBD window>]/rf_model.json (RF) or rtl_optuna.json (Optuna),
-								e.g. /opt/rtl-models/BR-ACF-bspline/rf_model.json, /opt/rtl-models/BR-ACF-bspline-temporal-g0.2-t0.5/
+								RTL_RandomForest
+									Mandatory Params:
+												- TRUST_DECISION_RF_MODEL_PARAM (content of the trained model, rf_model.json)
 									Optional Params:
-												- TRUST_DECISION_MODEL_DIR (default /opt/rtl-models)
-												- TRUST_DECISION_RF_MODEL / TRUST_DECISION_OPTUNA_MODEL (explicit model path, overrides the selection)
 												- TRUST_DECISION_LOGIC (Components (default) | ProjectedProbability)
 */
 func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params map[string]string) (core.TrustModelInstance, error) {
@@ -293,9 +292,8 @@ func (t DynamicTrustModelTemplateSpawner) OnNewVehicle(identifier string, params
 				}
 			}
 		// RTL thresholds (bt, dt, ut): manual, Random Forest or Optuna. See rtl_decision.go.
-		// On a missing/invalid parameter or model file, a warning is logged and the default decider above is kept.
 		case "RTL_RiskBased", "RTL_RandomForest", "RTL_Optuna":
-			trustDecider = rtlTrustDeciderOrDefault(paramTrustDecider, params, trustDecider)
+			trustDecider = newRTLTrustDecider(paramTrustDecider, params, t.rfModel)
 		}
 	}
 
