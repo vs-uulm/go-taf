@@ -1,7 +1,7 @@
 package leftturnassist_v0_1_0
 
 // RTL-based trust deciders: risk-based, Random Forest and Optuna.
-// Each one supports the component rule or the projected-probability rule (P > PTT, see rtl.PTT).
+// Each one supports the component rule or the projected-probability rule (bounds rtl.PTT and rtl.PUT).
 // Risk-based and Optuna take the RTL as parameters; the Optuna RTL is trained outside the TAF.
 // The Random Forest takes the trained model as parameter content (TRUST_DECISION_RF_MODEL_PARAM), like the MBD
 // quantification models; the TAF reads no files.
@@ -122,14 +122,19 @@ func newRTLTrustDecider(kind string, params map[string]string, session *rfModel)
 		atl := rtl.ATL{B: atlOpinion.Belief(), D: atlOpinion.Disbelief(), U: atlOpinion.Uncertainty()}
 		required := rtlFor(atl)
 
-		trusted := false
 		if usePP {
-			// trusted only above PTT, also if the ATL meets the RTL with a lower P (fail-safe)
-			trusted = trustdecision.ProjectProbability(atlOpinion) > rtl.PTT(required, atlOpinion.BaseRate())
-		} else {
-			trusted = rtl.Decide(atl, required)
+			p := trustdecision.ProjectProbability(atlOpinion)
+			switch {
+			case p > rtl.PTT(required, atlOpinion.BaseRate()):
+				return core.TRUSTWORTHY
+			case p < rtl.PUT(required, atlOpinion.BaseRate()):
+				return core.NOT_TRUSTWORTHY
+			default:
+				// gray zone: the ATL may or may not meet the RTL; rejected (fail-safe)
+				return core.NOT_TRUSTWORTHY
+			}
 		}
-		if trusted {
+		if rtl.Decide(atl, required) {
 			return core.TRUSTWORTHY
 		}
 		return core.NOT_TRUSTWORTHY
