@@ -111,6 +111,7 @@ var tchEvidence = []core.EvidenceType{
 	core.TCH_CONTROL_FLOW_INTEGRITY,
 	core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION,
 	core.TCH_COMMUNICATION_PROTECTION,
+	core.TCH_TAMPER_PROOF_CHECK,
 }
 
 // tchBaseClaims are the claims whose failure invalidates all remaining claims, as the firmware or the attestation
@@ -120,17 +121,25 @@ var tchBaseClaims = map[core.EvidenceType]bool{
 	core.TCH_KEY_PROTECTION: true,
 }
 
-// tchMaxCertainty limits belief + disbelief of the TCH opinion; the remainder is uncertainty, so the opinion is not
-// dogmatic, depending on the requirements this can be adjusted, for NOW it allows dogmatic opinions
-const tchMaxCertainty = 1.0
+// tchInvalidatingClaims are claims whose violation also devalues the remaining claims by the given factor, as
+// those attest a platform that is demonstrably manipulated; the graded form of a base claim
+var tchInvalidatingClaims = map[core.EvidenceType]float64{
+	core.TCH_TAMPER_PROOF_CHECK: 0.8,
+}
+
+// tchMaxCertainty limits belief + disbelief of the TCH opinion; the remainder is uncertainty, as a report is a
+// finite observation and cannot establish that the attested claims cover the compromise, that the measured state
+// still holds, or that the root of trust is itself intact
+const tchMaxCertainty = 0.9
 
 /*
 quantifyTCH maps the appraisals of the attested claims to an opinion:
 
 	 1 (claim verified)          -> belief += w
 	 0 (attestation failed)      -> disbelief += w; for a base claim: belief = 0, disbelief = tchMaxCertainty,
-	                                uncertainty = 1 - tchMaxCertainty
-	-1 (control not implemented) -> disbelief += w
+	                                uncertainty = 1 - tchMaxCertainty; for an invalidating claim with factor f:
+	                                disbelief = f*tchMaxCertainty, the remaining belief scaled to (1-f)*tchMaxCertainty
+	-1 (control not implemented) -> w remains uncertainty
 	-2 or no evidence            -> w remains uncertainty
 
 with w = tchMaxCertainty/len(tchEvidence). The meaning of the appraisals corresponds to the IMA trust model
@@ -140,6 +149,7 @@ func quantifyTCH(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableO
 	weight := tchMaxCertainty / float64(len(tchEvidence))
 	belief := 0.0
 	disbelief := 0.0
+	invalidation := 0.0
 
 	for _, claim := range tchEvidence {
 		appraisal, ok := m[claim].(int)
@@ -149,15 +159,29 @@ func quantifyTCH(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableO
 		switch appraisal {
 		case 1:
 			belief += weight
-		case -1:
-			disbelief += weight
 		case 0:
 			if tchBaseClaims[claim] {
 				opinion, _ := subjectivelogic.NewOpinion(0, tchMaxCertainty, 1-tchMaxCertainty, 0.5)
 				return &opinion
 			}
+			if factor, invalidating := tchInvalidatingClaims[claim]; invalidating {
+				invalidation = max(invalidation, factor)
+				continue
+			}
 			disbelief += weight
 		}
+		//-1 and any other value leave the claim's weight as uncertainty: no evidence in either direction
+	}
+
+	if invalidation > 0 {
+		//the remaining belief is devalued by the same factor, in proportion to how much of it holds
+		remaining := tchMaxCertainty - weight
+		fraction := 0.0
+		if remaining > 0 {
+			fraction = belief / remaining
+		}
+		belief = (1 - invalidation) * tchMaxCertainty * fraction
+		disbelief = invalidation * tchMaxCertainty
 	}
 
 	opinion, err := subjectivelogic.NewOpinion(belief, disbelief, max(0, 1-belief-disbelief), 0.5)

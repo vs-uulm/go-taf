@@ -68,6 +68,7 @@ const (
 	V2X_POSITION_OPINION
 	TCH_COMMUNICATION_PROTECTION
 	TCH_KEY_PROTECTION
+	TCH_TAMPER_PROOF_CHECK
 )
 
 func (e EvidenceType) String() string {
@@ -128,6 +129,8 @@ func (e EvidenceType) String() string {
 		return "COMMUNICATION_PROTECTION"
 	case TCH_KEY_PROTECTION:
 		return "KEY_PROTECTION"
+	case TCH_TAMPER_PROOF_CHECK:
+		return "TAMPER_PROOF_CHECK"
 	default:
 		return "UNKNOWN_EVIDENCE"
 	}
@@ -210,6 +213,8 @@ func (e EvidenceType) Source() TrustSource {
 		return TCH
 	case TCH_KEY_PROTECTION:
 		return TCH
+	case TCH_TAMPER_PROOF_CHECK:
+		return TCH
 	default:
 		return NONE
 	}
@@ -279,6 +284,8 @@ func EvidenceTypeBySourceAndName(ts TrustSource, name string) EvidenceType {
 			return TCH_COMMUNICATION_PROTECTION
 		case strings.ToUpper(name) == TCH_KEY_PROTECTION.String():
 			return TCH_KEY_PROTECTION
+		case strings.ToUpper(name) == TCH_TAMPER_PROOF_CHECK.String():
+			return TCH_TAMPER_PROOF_CHECK
 		default:
 			return UNKNOWN
 		}
