@@ -138,9 +138,10 @@ func (tmi *TrustModelInstance) Update(update core.Update) bool {
 
 				belief := (1-tmi.ewmaAlpha)*tmi.omegaMBD.Belief() + tmi.ewmaAlpha*update.Opinion().Belief()
 				disbelief := (1-tmi.ewmaAlpha)*tmi.omegaMBD.Disbelief() + tmi.ewmaAlpha*update.Opinion().Disbelief()
-				newOpinion, _ := subjectivelogic.NewOpinion(belief, disbelief, 1-(belief+disbelief), update.Opinion().BaseRate())
-
-				tmi.omegaMBD.Modify(newOpinion.Belief(), newOpinion.Disbelief(), newOpinion.Uncertainty(), newOpinion.BaseRate())
+				newOpinion, err := subjectivelogic.NewOpinionWithTolerance(belief, disbelief, 1-(belief+disbelief), update.Opinion().BaseRate())
+				if err == nil { // otherwise, the previous opinion is kept
+					tmi.omegaMBD.Modify(newOpinion.Belief(), newOpinion.Disbelief(), newOpinion.Uncertainty(), newOpinion.BaseRate())
+				}
 				tmi.version++
 			}
 		}

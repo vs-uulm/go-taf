@@ -96,8 +96,10 @@ func (e *TrustModelInstance) Update(update core.Update) bool {
 					} else {
 						belief := (1-e.ewmaAlpha)*e.objects[objID].Belief() + e.ewmaAlpha*update.Opinion().Belief()
 						disbelief := (1-e.ewmaAlpha)*e.objects[objID].Disbelief() + e.ewmaAlpha*update.Opinion().Disbelief()
-						newOpinion, _ := subjectivelogic.NewOpinion(belief, disbelief, 1-(belief+disbelief), update.Opinion().BaseRate())
-						e.objects[objID] = &newOpinion
+						newOpinion, err := subjectivelogic.NewOpinionWithTolerance(belief, disbelief, 1-(belief+disbelief), update.Opinion().BaseRate())
+						if err == nil { // otherwise, the previous opinion is kept
+							e.objects[objID] = &newOpinion
+						}
 					}
 					e.updateValues()
 					e.incrementVersion()
