@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/vs-uulm/go-subjectivelogic/pkg/subjectivelogic"
 	"github.com/vs-uulm/go-taf/pkg/core"
-	"log"
 	"strconv"
 	"strings"
 )
@@ -73,6 +72,13 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		}
 	}
 
+	// weights must not be negative, so that belief + disbelief <= 1 holds in the quantifiers apart from rounding errors
+	for key, value := range tchExistenceWeights {
+		if value < 0 {
+			return nil, errors.New("Weight " + key.String() + " in tchExistenceWeights must not be negative")
+		}
+	}
+
 	// normalization of TCH_EXISTENCE weights in case the sum is more than 1.0
 	sum := 0.0
 	for _, value := range tchExistenceWeights {
@@ -92,15 +98,6 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		TrustSource: core.TCH,
 		Evidence:    []core.EvidenceType{core.TCH_SECURE_BOOT, core.TCH_SECURE_OTA, core.TCH_ACCESS_CONTROL, core.TCH_APPLICATION_ISOLATION, core.TCH_CONTROL_FLOW_INTEGRITY, core.TCH_CONFIGURATION_INTEGRITY_VERIFICATION},
 		Quantifier: func(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableOpinion {
-
-			var sum = 0.0
-			for _, val := range tchExistenceWeights {
-				sum += val
-			}
-
-			if sum > 1.0 { // sum of existence weights is not allowed to exceed 1.0
-				log.Fatalf("Sum existence weights of the TCH trust source exceeds 1.0")
-			}
 
 			belief := 0.0
 			disbelief := 0.0
@@ -138,9 +135,11 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 					}
 				}
 			}
-			sl, _ := subjectivelogic.NewOpinion(belief, disbelief, 1-belief-disbelief, 0.5)
-
-			return &sl
+			opinion, err := subjectivelogic.NewOpinionWithTolerance(belief, disbelief, 1-belief-disbelief, 0.5)
+			if err != nil {
+				return &FullUncertainty
+			}
+			return &opinion
 		},
 	}
 
@@ -148,5 +147,4 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 }
 
 func init() {
-	//TODO: Validate weights here instead of inside quantifier function
 }

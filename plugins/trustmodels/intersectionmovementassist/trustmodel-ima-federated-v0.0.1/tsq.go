@@ -131,6 +131,23 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 		}
 	}
 
+	// weights must not be negative, so that belief + disbelief <= 1 holds in the quantifiers apart from rounding errors
+	for key, value := range mbdWeightsDetection {
+		if value < 0 {
+			return nil, errors.New("Weight " + key.String() + " in mbdWeightsDetection must not be negative")
+		}
+	}
+	for key, value := range mbdWeightsNoDetection {
+		if value < 0 {
+			return nil, errors.New("Weight " + key.String() + " in mbdWeightsNoDetection must not be negative")
+		}
+	}
+	for key, value := range tchExistenceWeights {
+		if value < 0 {
+			return nil, errors.New("Weight " + key.String() + " in tchExistenceWeights must not be negative")
+		}
+	}
+
 	// normalization of TCH_EXISTENCE weights in case the sum is more than 1.0
 	sum := 0.0
 	for _, value := range tchExistenceWeights {
@@ -193,9 +210,11 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 			disbelief := (sumDisbelief / sumWeights) * exponentialValue
 			//uncertainty := 1 - exponentialValue
 
-			sl, _ := subjectivelogic.NewOpinion(belief, disbelief, 1-belief-disbelief, 0.5)
-
-			return &sl
+			opinion, err := subjectivelogic.NewOpinionWithTolerance(belief, disbelief, 1-belief-disbelief, 0.5)
+			if err != nil {
+				return &FullUncertainty
+			}
+			return &opinion
 		},
 	}
 
@@ -205,5 +224,4 @@ func createTrustSourceQuantifiers(params map[string]string) ([]core.TrustSourceQ
 }
 
 func init() {
-	//TODO: Validate weights here instead of inside quantifier function
 }
