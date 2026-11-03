@@ -138,7 +138,8 @@ quantifyTCH maps the appraisals of the attested claims to an opinion:
 	 1 (claim verified)          -> belief += w
 	 0 (attestation failed)      -> disbelief += w; for a base claim: belief = 0, disbelief = tchMaxCertainty,
 	                                uncertainty = 1 - tchMaxCertainty; for an invalidating claim with factor f:
-	                                disbelief = f*tchMaxCertainty, the remaining belief scaled to (1-f)*tchMaxCertainty
+	                                disbelief = f*tchMaxCertainty, the remaining claims' belief and disbelief scaled
+	                                to share (1-f)*tchMaxCertainty
 	-1 (control not implemented) -> w remains uncertainty
 	-2 or no evidence            -> w remains uncertainty
 
@@ -150,6 +151,7 @@ func quantifyTCH(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableO
 	belief := 0.0
 	disbelief := 0.0
 	invalidation := 0.0
+	invalidatingWeight := 0.0
 
 	for _, claim := range tchEvidence {
 		appraisal, ok := m[claim].(int)
@@ -166,6 +168,7 @@ func quantifyTCH(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableO
 			}
 			if factor, invalidating := tchInvalidatingClaims[claim]; invalidating {
 				invalidation = max(invalidation, factor)
+				invalidatingWeight += weight
 				continue
 			}
 			disbelief += weight
@@ -174,14 +177,14 @@ func quantifyTCH(m map[core.EvidenceType]interface{}) subjectivelogic.QueryableO
 	}
 
 	if invalidation > 0 {
-		//the remaining belief is devalued by the same factor, in proportion to how much of it holds
-		remaining := tchMaxCertainty - weight
-		fraction := 0.0
-		if remaining > 0 {
-			fraction = belief / remaining
+		//the remaining claims attest a platform that is demonstrably manipulated, so they share only (1-f) of the
+		//certainty, in proportion to their own belief and disbelief
+		scale := 0.0
+		if remaining := tchMaxCertainty - invalidatingWeight; remaining > 0 {
+			scale = (1 - invalidation) * tchMaxCertainty / remaining
 		}
-		belief = (1 - invalidation) * tchMaxCertainty * fraction
-		disbelief = invalidation * tchMaxCertainty
+		belief *= scale
+		disbelief = invalidation*tchMaxCertainty + disbelief*scale
 	}
 
 	opinion, err := subjectivelogic.NewOpinion(belief, disbelief, max(0, 1-belief-disbelief), 0.5)
